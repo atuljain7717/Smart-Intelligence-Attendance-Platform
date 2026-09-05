@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import text
@@ -48,7 +49,6 @@ class CreateEmployeeRequest(BaseModel):
         max_length=100,
     )
 
-    # Location is optional.
     location_id: int | None = None
 
 
@@ -73,7 +73,7 @@ class UpdateUserRequest(BaseModel):
 # ============================================================
 
 def require_admin(current_user: dict):
-    if current_user.get("role") != "admin":
+    if str(current_user.get("role", "")).lower() != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required.",
@@ -102,10 +102,8 @@ def get_users(
             u.location_id,
             l.name AS location_name,
 
-            EXISTS (
-                SELECT 1
-                FROM public.face_embeddings fe
-                WHERE fe.user_id = u.id
+            (
+                u.face_embedding IS NOT NULL
             ) AS face_registered
 
         FROM public.users u
@@ -125,7 +123,7 @@ def get_users(
             "name": user["name"],
             "email": user["email"],
             "role": user["role"],
-            "is_active": user["is_active"],
+            "is_active": bool(user["is_active"]),
             "location_id": user["location_id"],
             "location_name": user["location_name"],
             "face_registered": bool(user["face_registered"]),
@@ -186,6 +184,7 @@ def create_employee(
                 FROM public.locations
                 WHERE id = :location_id
                   AND is_active = TRUE
+                LIMIT 1
                 """
             ),
             {
@@ -221,9 +220,10 @@ def create_employee(
                     role,
                     location_id,
                     created_at,
-                    is_active
+                    is_active,
+                    face_embedding,
+                    face_enrolled_at
                 )
-
                 VALUES
                 (
                     :name,
@@ -232,9 +232,10 @@ def create_employee(
                     'employee',
                     :location_id,
                     CURRENT_TIMESTAMP,
-                    TRUE
+                    TRUE,
+                    NULL,
+                    NULL
                 )
-
                 RETURNING
                     id,
                     name,
@@ -277,7 +278,7 @@ def create_employee(
                 if location
                 else None
             ),
-            "is_active": employee["is_active"],
+            "is_active": bool(employee["is_active"]),
             "face_registered": False,
         },
     }
@@ -307,10 +308,8 @@ def get_user(
                 u.location_id,
                 l.name AS location_name,
 
-                EXISTS (
-                    SELECT 1
-                    FROM public.face_embeddings fe
-                    WHERE fe.user_id = u.id
+                (
+                    u.face_embedding IS NOT NULL
                 ) AS face_registered
 
             FROM public.users u
@@ -319,6 +318,7 @@ def get_user(
                 ON l.id = u.location_id
 
             WHERE u.id = :user_id
+            LIMIT 1
             """
         ),
         {
@@ -337,7 +337,7 @@ def get_user(
         "name": user["name"],
         "email": user["email"],
         "role": user["role"],
-        "is_active": user["is_active"],
+        "is_active": bool(user["is_active"]),
         "location_id": user["location_id"],
         "location_name": user["location_name"],
         "face_registered": bool(user["face_registered"]),
@@ -357,12 +357,17 @@ def update_user(
 ):
     require_admin(current_user)
 
+    # --------------------------------------------------------
+    # CHECK USER
+    # --------------------------------------------------------
+
     existing_user = db.execute(
         text(
             """
             SELECT id
             FROM public.users
             WHERE id = :user_id
+            LIMIT 1
             """
         ),
         {
@@ -375,6 +380,10 @@ def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
         )
+
+    # --------------------------------------------------------
+    # CHECK DUPLICATE EMAIL
+    # --------------------------------------------------------
 
     duplicate_email = db.execute(
         text(
@@ -410,6 +419,7 @@ def update_user(
                 FROM public.locations
                 WHERE id = :location_id
                   AND is_active = TRUE
+                LIMIT 1
                 """
             ),
             {
@@ -432,14 +442,11 @@ def update_user(
             text(
                 """
                 UPDATE public.users
-
                 SET
                     name = :name,
                     email = :email,
                     location_id = :location_id
-
                 WHERE id = :user_id
-
                 RETURNING
                     id,
                     name,
@@ -463,6 +470,16 @@ def update_user(
         db.rollback()
         raise
 
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    # --------------------------------------------------------
+    # LOCATION NAME
+    # --------------------------------------------------------
+
     location_name = None
 
     if user["location_id"] is not None:
@@ -472,6 +489,7 @@ def update_user(
                 SELECT name
                 FROM public.locations
                 WHERE id = :location_id
+                LIMIT 1
                 """
             ),
             {
@@ -491,7 +509,7 @@ def update_user(
             "role": user["role"],
             "location_id": user["location_id"],
             "location_name": location_name,
-            "is_active": user["is_active"],
+            "is_active": bool(user["is_active"]),
         },
     }
 
@@ -514,6 +532,7 @@ def get_user_attendance(
             SELECT id
             FROM public.users
             WHERE id = :user_id
+            LIMIT 1
             """
         ),
         {
@@ -541,14 +560,10 @@ def get_user_attendance(
                 a.longitude,
                 a.location_id,
                 l.name AS location_name
-
             FROM public.attendance a
-
             LEFT JOIN public.locations l
                 ON l.id = a.location_id
-
             WHERE a.user_id = :user_id
-
             ORDER BY
                 a.attendance_data DESC,
                 a.check_in DESC
@@ -634,7 +649,14 @@ def deactivate_user(
 
     return {
         "message": "User deactivated successfully.",
-        "user": user,
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "email": user["email"],
+            "role": user["role"],
+            "location_id": user["location_id"],
+            "is_active": bool(user["is_active"]),
+        },
     }
 
 
@@ -680,24 +702,19 @@ def activate_user(
 
     return {
         "message": "User activated successfully.",
-        "user": user,
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "email": user["email"],
+            "role": user["role"],
+            "location_id": user["location_id"],
+            "is_active": bool(user["is_active"]),
+        },
     }
 
 
 # ============================================================
 # PERMANENT DELETE EMPLOYEE
-# ============================================================
-#
-# Deletes:
-#   1. Face/biometric embeddings
-#   2. Attendance records
-#   3. User account
-#
-# IMPORTANT:
-#   The employee's assigned location is NOT deleted because
-#   locations are shared resources and may belong to other
-#   employees.
-#
 # ============================================================
 
 @router.delete("/{user_id}")
@@ -723,6 +740,7 @@ def delete_user(
                 location_id
             FROM public.users
             WHERE id = :user_id
+            LIMIT 1
             """
         ),
         {
@@ -753,7 +771,7 @@ def delete_user(
             pass
 
     # --------------------------------------------------------
-    # ONLY EMPLOYEE CAN BE DELETED THROUGH THIS ENDPOINT
+    # ONLY EMPLOYEE CAN BE DELETED
     # --------------------------------------------------------
 
     if str(user["role"]).lower() == "admin":
@@ -768,14 +786,17 @@ def delete_user(
 
     try:
         # ----------------------------------------------------
-        # 1. DELETE FACE / BIOMETRIC DATA
+        # 1. REMOVE FACE DATA FROM USERS TABLE
         # ----------------------------------------------------
 
         face_result = db.execute(
             text(
                 """
-                DELETE FROM public.face_embeddings
-                WHERE user_id = :user_id
+                UPDATE public.users
+                SET
+                    face_embedding = NULL,
+                    face_enrolled_at = NULL
+                WHERE id = :user_id
                 """
             ),
             {
@@ -826,10 +847,6 @@ def delete_user(
                 detail="User could not be deleted.",
             )
 
-        # ----------------------------------------------------
-        # COMMIT EVERYTHING TOGETHER
-        # ----------------------------------------------------
-
         db.commit()
 
     except HTTPException:
@@ -847,10 +864,6 @@ def delete_user(
             ),
         ) from exc
 
-    # --------------------------------------------------------
-    # RESPONSE
-    # --------------------------------------------------------
-
     return {
         "message": "Employee permanently deleted successfully.",
         "deleted_employee": {
@@ -859,7 +872,7 @@ def delete_user(
             "email": user["email"],
         },
         "deleted_records": {
-            "face_embeddings": deleted_face_records,
+            "face_data": deleted_face_records,
             "attendance": deleted_attendance_records,
         },
     }
