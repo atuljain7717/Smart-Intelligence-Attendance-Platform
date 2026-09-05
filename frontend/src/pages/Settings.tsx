@@ -1,24 +1,30 @@
-﻿import {
+﻿
+import {
   Bell,
   Building2,
   Camera,
   CheckCircle2,
   Clock3,
+  Eye,
+  EyeOff,
   Lock,
   Mail,
   MapPin,
   Save,
   ShieldCheck,
   User,
+  X,
 } from "lucide-react";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import {
   getSettings,
   updateSettings,
   type PlatformSettings,
 } from "../services/settingsService";
+
+import api from "../services/api";
 
 const defaultSettings: PlatformSettings = {
   organization_name: "Smart Attendance Intelligence",
@@ -37,6 +43,36 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+
+  const [showPasswordModal, setShowPasswordModal] =
+    useState(false);
+
+  const [currentPassword, setCurrentPassword] =
+    useState("");
+
+  const [newPassword, setNewPassword] =
+    useState("");
+
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
+
+  const [showCurrentPassword, setShowCurrentPassword] =
+    useState(false);
+
+  const [showNewPassword, setShowNewPassword] =
+    useState(false);
+
+  const [showConfirmPassword, setShowConfirmPassword] =
+    useState(false);
+
+  const [passwordChanging, setPasswordChanging] =
+    useState(false);
+
+  const [passwordSuccess, setPasswordSuccess] =
+    useState("");
+
+  const [passwordError, setPasswordError] =
+    useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -117,6 +153,98 @@ export default function Settings() {
     }
   };
 
+  const openPasswordModal = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setPasswordSuccess("");
+    setShowPasswordModal(true);
+  };
+
+  const closePasswordModal = () => {
+    if (passwordChanging) return;
+
+    setShowPasswordModal(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setPasswordSuccess("");
+  };
+
+  const handlePasswordChange = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (!currentPassword.trim()) {
+      setPasswordError(
+        "Please enter your current password."
+      );
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError(
+        "New password must contain at least 8 characters."
+      );
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError(
+        "New password and confirmation password do not match."
+      );
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setPasswordError(
+        "New password must be different from your current password."
+      );
+      return;
+    }
+
+    try {
+      setPasswordChanging(true);
+
+      await api.post("/api/auth/change-password", {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+
+      setPasswordSuccess(
+        "Password changed successfully."
+      );
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+
+      window.setTimeout(() => {
+        setShowPasswordModal(false);
+        setPasswordSuccess("");
+      }, 1600);
+    } catch (err: any) {
+      console.error(
+        "Password change error:",
+        err
+      );
+
+      const message =
+        err?.response?.data?.detail ||
+        "Unable to change password. Please try again.";
+
+      setPasswordError(message);
+    } finally {
+      setPasswordChanging(false);
+    }
+  };
+
   if (loading) {
     return (
       <section className="page settings-page">
@@ -138,15 +266,7 @@ export default function Settings() {
   return (
     <section className="page settings-page">
 
-      {/* =====================================================
-          PAGE STYLES
-      ===================================================== */}
-
       <style>{`
-
-        /* ===================================================
-           PAGE
-        =================================================== */
 
         .settings-page {
           width: 100%;
@@ -155,11 +275,6 @@ export default function Settings() {
           padding: 28px;
           box-sizing: border-box;
         }
-
-
-        /* ===================================================
-           HEADER
-        =================================================== */
 
         .settings-header {
           display: flex;
@@ -173,72 +288,50 @@ export default function Settings() {
           display: inline-flex;
           align-items: center;
           gap: 7px;
-
           margin-bottom: 8px;
-
           font-size: 11px;
           font-weight: 800;
           letter-spacing: 0.12em;
-
           opacity: 0.55;
         }
 
         .settings-title {
           margin: 0;
-
           font-size: 30px;
           line-height: 1.15;
           font-weight: 750;
-
           letter-spacing: -0.03em;
         }
 
         .settings-description {
           margin: 8px 0 0;
-
           max-width: 650px;
-
           font-size: 14px;
           line-height: 1.6;
-
           opacity: 0.58;
         }
-
-
-        /* ===================================================
-           SAVE BUTTON
-        =================================================== */
 
         .settings-save-button {
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 9px;
-
           min-width: 145px;
           height: 44px;
-
           padding: 0 18px;
-
           border: 1px solid rgba(99, 102, 241, 0.45);
           border-radius: 11px;
-
           background: linear-gradient(
             135deg,
             #4f46e5,
             #6366f1
           );
-
           color: #ffffff;
-
           font-size: 13px;
           font-weight: 750;
-
           cursor: pointer;
-
           box-shadow:
             0 8px 22px rgba(79, 70, 229, 0.20);
-
           transition:
             transform 0.18s ease,
             box-shadow 0.18s ease,
@@ -247,13 +340,8 @@ export default function Settings() {
 
         .settings-save-button:hover:not(:disabled) {
           transform: translateY(-2px);
-
           box-shadow:
             0 12px 28px rgba(79, 70, 229, 0.28);
-        }
-
-        .settings-save-button:active:not(:disabled) {
-          transform: translateY(0);
         }
 
         .settings-save-button:disabled {
@@ -261,21 +349,13 @@ export default function Settings() {
           cursor: not-allowed;
         }
 
-
-        /* ===================================================
-           ALERTS
-        =================================================== */
-
         .settings-alert {
           display: flex;
           align-items: flex-start;
           gap: 12px;
-
           padding: 14px 16px;
           margin-bottom: 20px;
-
           border-radius: 13px;
-
           border: 1px solid rgba(255, 255, 255, 0.08);
           background: rgba(255, 255, 255, 0.035);
         }
@@ -284,23 +364,18 @@ export default function Settings() {
           display: flex;
           align-items: center;
           justify-content: center;
-
           width: 34px;
           height: 34px;
-
           flex-shrink: 0;
-
           border-radius: 9px;
         }
 
-        .settings-alert.error
-        .settings-alert-icon {
+        .settings-alert.error .settings-alert-icon {
           background: rgba(239, 68, 68, 0.10);
           color: #ef4444;
         }
 
-        .settings-alert.success
-        .settings-alert-icon {
+        .settings-alert.success .settings-alert-icon {
           background: rgba(34, 197, 94, 0.10);
           color: #22c55e;
         }
@@ -320,67 +395,39 @@ export default function Settings() {
           opacity: 0.58;
         }
 
-
-        /* ===================================================
-           MAIN GRID
-        =================================================== */
-
         .settings-modern-grid {
           display: grid;
-
           grid-template-columns:
             repeat(2, minmax(0, 1fr));
-
           gap: 18px;
         }
 
-
-        /* ===================================================
-           CARD
-        =================================================== */
-
         .settings-modern-card {
           position: relative;
-
           padding: 22px;
-
           border: 1px solid rgba(255, 255, 255, 0.075);
           border-radius: 17px;
-
           background:
             linear-gradient(
               145deg,
               rgba(255,255,255,0.045),
               rgba(255,255,255,0.018)
             );
-
           box-shadow:
             0 12px 35px rgba(0, 0, 0, 0.10);
-
           overflow: hidden;
-
-          transition:
-            border-color 0.2s ease,
-            transform 0.2s ease;
         }
 
         .settings-modern-card:hover {
           border-color: rgba(255,255,255,0.12);
         }
 
-
-        /* ===================================================
-           CARD HEADER
-        =================================================== */
-
         .settings-modern-card-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-
           padding-bottom: 18px;
           margin-bottom: 19px;
-
           border-bottom:
             1px solid rgba(255,255,255,0.065);
         }
@@ -395,38 +442,26 @@ export default function Settings() {
           display: flex;
           align-items: center;
           justify-content: center;
-
           width: 38px;
           height: 38px;
-
           flex-shrink: 0;
-
           border-radius: 11px;
-
           background: rgba(99,102,241,0.10);
           color: #6366f1;
         }
 
         .settings-modern-card h2 {
           margin: 0;
-
           font-size: 16px;
           font-weight: 720;
         }
 
         .settings-modern-card-header p {
           margin: 4px 0 0;
-
           font-size: 12px;
           line-height: 1.4;
-
           opacity: 0.50;
         }
-
-
-        /* ===================================================
-           FORM
-        =================================================== */
 
         .settings-modern-form {
           display: flex;
@@ -444,12 +479,9 @@ export default function Settings() {
           display: flex;
           align-items: center;
           gap: 7px;
-
           font-size: 11px;
           font-weight: 750;
-
           letter-spacing: 0.02em;
-
           opacity: 0.64;
         }
 
@@ -457,23 +489,15 @@ export default function Settings() {
         .settings-modern-field select {
           width: 100%;
           height: 44px;
-
           box-sizing: border-box;
-
           padding: 0 13px;
-
           border: 1px solid rgba(255,255,255,0.09);
           border-radius: 10px;
-
           background: rgba(255,255,255,0.035);
-
           color: inherit;
-
           outline: none;
-
           font-family: inherit;
           font-size: 13px;
-
           transition:
             border-color 0.18s ease,
             background 0.18s ease,
@@ -483,19 +507,13 @@ export default function Settings() {
         .settings-modern-field input:hover,
         .settings-modern-field select:hover {
           background: rgba(255,255,255,0.055);
-
-          border-color:
-            rgba(255,255,255,0.14);
+          border-color: rgba(255,255,255,0.14);
         }
 
         .settings-modern-field input:focus,
         .settings-modern-field select:focus {
-          border-color:
-            rgba(99,102,241,0.70);
-
-          background:
-            rgba(99,102,241,0.045);
-
+          border-color: rgba(99,102,241,0.70);
+          background: rgba(99,102,241,0.045);
           box-shadow:
             0 0 0 3px
             rgba(99,102,241,0.10);
@@ -510,25 +528,14 @@ export default function Settings() {
           cursor: not-allowed;
         }
 
-
-        /* ===================================================
-           SELECT
-        =================================================== */
-
         .settings-modern-field select {
           cursor: pointer;
         }
-
-
-        /* ===================================================
-           TOGGLE
-        =================================================== */
 
         .settings-toggle-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
-
           gap: 20px;
         }
 
@@ -545,30 +552,21 @@ export default function Settings() {
 
         .settings-toggle-info span {
           max-width: 480px;
-
           font-size: 12px;
           line-height: 1.5;
-
           opacity: 0.52;
         }
 
         .settings-toggle {
           position: relative;
-
           width: 48px;
           height: 27px;
-
           flex-shrink: 0;
-
           padding: 0;
-
           border: 1px solid rgba(255,255,255,0.12);
           border-radius: 999px;
-
           background: rgba(255,255,255,0.08);
-
           cursor: pointer;
-
           transition:
             background 0.2s ease,
             border-color 0.2s ease;
@@ -576,27 +574,20 @@ export default function Settings() {
 
         .settings-toggle span {
           position: absolute;
-
           top: 4px;
           left: 4px;
-
           width: 17px;
           height: 17px;
-
           border-radius: 50%;
-
           background: #ffffff;
-
           box-shadow:
             0 2px 7px rgba(0,0,0,0.20);
-
           transition:
             transform 0.2s ease;
         }
 
         .settings-toggle.active {
           background: #4f46e5;
-
           border-color: #6366f1;
         }
 
@@ -604,16 +595,10 @@ export default function Settings() {
           transform: translateX(21px);
         }
 
-
-        /* ===================================================
-           SECURITY
-        =================================================== */
-
         .settings-security-box {
           display: flex;
           align-items: center;
           justify-content: space-between;
-
           gap: 18px;
         }
 
@@ -630,7 +615,6 @@ export default function Settings() {
         .settings-security-info span {
           font-size: 12px;
           line-height: 1.5;
-
           opacity: 0.52;
         }
 
@@ -639,29 +623,17 @@ export default function Settings() {
           align-items: center;
           justify-content: center;
           gap: 8px;
-
           height: 39px;
-
           padding: 0 14px;
-
           flex-shrink: 0;
-
-          border:
-            1px solid rgba(99,102,241,0.28);
-
+          border: 1px solid rgba(99,102,241,0.28);
           border-radius: 10px;
-
-          background:
-            rgba(99,102,241,0.08);
-
+          background: rgba(99,102,241,0.08);
           color: #6366f1;
-
           font-family: inherit;
           font-size: 12px;
           font-weight: 750;
-
           cursor: pointer;
-
           transition:
             transform 0.18s ease,
             background 0.18s ease,
@@ -670,29 +642,17 @@ export default function Settings() {
 
         .settings-password-button:hover {
           transform: translateY(-1px);
-
-          background:
-            rgba(99,102,241,0.14);
-
-          border-color:
-            rgba(99,102,241,0.48);
+          background: rgba(99,102,241,0.14);
+          border-color: rgba(99,102,241,0.48);
         }
-
-
-        /* ===================================================
-           LOADING
-        =================================================== */
 
         .settings-loading {
           min-height: 300px;
-
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-
           gap: 8px;
-
           text-align: center;
         }
 
@@ -700,14 +660,10 @@ export default function Settings() {
           display: flex;
           align-items: center;
           justify-content: center;
-
           width: 54px;
           height: 54px;
-
           margin-bottom: 8px;
-
           border-radius: 15px;
-
           background: rgba(99,102,241,0.10);
           color: #6366f1;
         }
@@ -721,10 +677,226 @@ export default function Settings() {
           opacity: 0.50;
         }
 
+        /* PASSWORD MODAL */
 
-        /* ===================================================
-           RESPONSIVE
-        =================================================== */
+        .password-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          background: rgba(2, 6, 23, 0.72);
+          backdrop-filter: blur(8px);
+        }
+
+        .password-modal {
+          width: 100%;
+          max-width: 470px;
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 20px;
+          background:
+            linear-gradient(
+              145deg,
+              rgba(30,41,59,0.98),
+              rgba(15,23,42,0.98)
+            );
+          box-shadow:
+            0 30px 90px rgba(0,0,0,0.45);
+          overflow: hidden;
+        }
+
+        .password-modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 20px 22px;
+          border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+
+        .password-modal-title {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .password-modal-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          border-radius: 11px;
+          background: rgba(99,102,241,0.12);
+          color: #818cf8;
+        }
+
+        .password-modal-title h3 {
+          margin: 0;
+          font-size: 17px;
+        }
+
+        .password-modal-title p {
+          margin: 4px 0 0;
+          font-size: 12px;
+          opacity: 0.52;
+        }
+
+        .password-modal-close {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 34px;
+          height: 34px;
+          padding: 0;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 9px;
+          background: rgba(255,255,255,0.04);
+          color: inherit;
+          cursor: pointer;
+        }
+
+        .password-modal-close:hover {
+          background: rgba(255,255,255,0.08);
+        }
+
+        .password-modal-body {
+          padding: 22px;
+        }
+
+        .password-form {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .password-field {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+
+        .password-field label {
+          font-size: 11px;
+          font-weight: 750;
+          letter-spacing: 0.02em;
+          opacity: 0.65;
+        }
+
+        .password-input-wrap {
+          position: relative;
+        }
+
+        .password-input-wrap input {
+          width: 100%;
+          height: 46px;
+          box-sizing: border-box;
+          padding: 0 45px 0 13px;
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 10px;
+          background: rgba(255,255,255,0.045);
+          color: inherit;
+          outline: none;
+          font-family: inherit;
+          font-size: 13px;
+        }
+
+        .password-input-wrap input:focus {
+          border-color: rgba(99,102,241,0.70);
+          box-shadow:
+            0 0 0 3px rgba(99,102,241,0.10);
+        }
+
+        .password-eye {
+          position: absolute;
+          right: 7px;
+          top: 50%;
+          transform: translateY(-50%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 34px;
+          height: 34px;
+          border: 0;
+          border-radius: 8px;
+          background: transparent;
+          color: inherit;
+          opacity: 0.55;
+          cursor: pointer;
+        }
+
+        .password-eye:hover {
+          opacity: 1;
+          background: rgba(255,255,255,0.06);
+        }
+
+        .password-error,
+        .password-success {
+          padding: 11px 12px;
+          border-radius: 10px;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        .password-error {
+          border: 1px solid rgba(239,68,68,0.20);
+          background: rgba(239,68,68,0.08);
+          color: #fca5a5;
+        }
+
+        .password-success {
+          border: 1px solid rgba(34,197,94,0.20);
+          background: rgba(34,197,94,0.08);
+          color: #86efac;
+        }
+
+        .password-modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 4px;
+        }
+
+        .password-cancel,
+        .password-submit {
+          height: 42px;
+          padding: 0 16px;
+          border-radius: 10px;
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 750;
+          cursor: pointer;
+        }
+
+        .password-cancel {
+          border: 1px solid rgba(255,255,255,0.09);
+          background: rgba(255,255,255,0.04);
+          color: inherit;
+        }
+
+        .password-submit {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-width: 135px;
+          border: 1px solid rgba(99,102,241,0.45);
+          background: linear-gradient(
+            135deg,
+            #4f46e5,
+            #6366f1
+          );
+          color: white;
+          box-shadow:
+            0 8px 20px rgba(79,70,229,0.20);
+        }
+
+        .password-submit:disabled,
+        .password-cancel:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
 
         @media (max-width: 900px) {
           .settings-modern-grid {
@@ -767,19 +939,29 @@ export default function Settings() {
           .settings-toggle-row {
             align-items: flex-start;
           }
+
+          .password-modal-backdrop {
+            padding: 12px;
+          }
+
+          .password-modal-body {
+            padding: 18px;
+          }
+
+          .password-modal-actions {
+            flex-direction: column-reverse;
+          }
+
+          .password-cancel,
+          .password-submit {
+            width: 100%;
+          }
         }
 
       `}</style>
 
-
-      {/* =====================================================
-          HEADER
-      ===================================================== */}
-
       <header className="settings-header">
-
         <div>
-
           <div className="settings-eyebrow">
             <ShieldCheck size={13} />
             SYSTEM CONFIGURATION
@@ -794,9 +976,7 @@ export default function Settings() {
             platform preferences, monitoring controls
             and security configuration.
           </p>
-
         </div>
-
 
         <button
           type="button"
@@ -804,7 +984,6 @@ export default function Settings() {
           onClick={() => void handleSave()}
           disabled={saving}
         >
-
           <Save size={16} />
 
           {saving
@@ -812,52 +991,29 @@ export default function Settings() {
             : saved
               ? "Saved"
               : "Save Changes"}
-
         </button>
-
       </header>
-
-
-      {/* =====================================================
-          ERROR
-      ===================================================== */}
 
       {error && (
         <div className="settings-alert error">
-
           <div className="settings-alert-icon">
             <ShieldCheck size={18} />
           </div>
 
           <div className="settings-alert-content">
-
-            <strong>
-              Settings error
-            </strong>
-
-            <span>
-              {error}
-            </span>
-
+            <strong>Settings error</strong>
+            <span>{error}</span>
           </div>
-
         </div>
       )}
 
-
-      {/* =====================================================
-          SUCCESS
-      ===================================================== */}
-
       {saved && (
         <div className="settings-alert success">
-
           <div className="settings-alert-icon">
             <CheckCircle2 size={18} />
           </div>
 
           <div className="settings-alert-content">
-
             <strong>
               Settings saved successfully
             </strong>
@@ -866,55 +1022,33 @@ export default function Settings() {
               Your platform configuration has been
               updated.
             </span>
-
           </div>
-
         </div>
       )}
 
-
-      {/* =====================================================
-          SETTINGS GRID
-      ===================================================== */}
-
       <div className="settings-modern-grid">
 
-
-        {/* ===================================================
-            PROFILE
-        =================================================== */}
+        {/* PROFILE */}
 
         <div className="settings-modern-card">
-
           <div className="settings-modern-card-header">
-
             <div className="settings-card-title-area">
-
               <div className="settings-card-icon">
                 <User size={19} />
               </div>
 
               <div>
-
-                <h2>
-                  Profile
-                </h2>
-
+                <h2>Profile</h2>
                 <p>
                   Administrator account information
                 </p>
-
               </div>
-
             </div>
-
           </div>
-
 
           <div className="settings-modern-form">
 
             <div className="settings-modern-field">
-
               <label>
                 <User size={13} />
                 FULL NAME
@@ -925,12 +1059,9 @@ export default function Settings() {
                 defaultValue="Administrator"
                 placeholder="Enter full name"
               />
-
             </div>
 
-
             <div className="settings-modern-field">
-
               <label>
                 <Mail size={13} />
                 EMAIL ADDRESS
@@ -938,15 +1069,12 @@ export default function Settings() {
 
               <input
                 type="email"
-                defaultValue="admin@example.com"
+                defaultValue="jainatul390@gmail.com"
                 placeholder="Enter email address"
               />
-
             </div>
 
-
             <div className="settings-modern-field">
-
               <label>
                 <ShieldCheck size={13} />
                 ROLE
@@ -958,49 +1086,32 @@ export default function Settings() {
                 disabled
                 readOnly
               />
-
             </div>
 
           </div>
-
         </div>
 
-
-        {/* ===================================================
-            ORGANIZATION
-        =================================================== */}
+        {/* ORGANIZATION */}
 
         <div className="settings-modern-card">
-
           <div className="settings-modern-card-header">
-
             <div className="settings-card-title-area">
-
               <div className="settings-card-icon">
                 <Building2 size={19} />
               </div>
 
               <div>
-
-                <h2>
-                  Organization
-                </h2>
-
+                <h2>Organization</h2>
                 <p>
                   Workforce organization settings
                 </p>
-
               </div>
-
             </div>
-
           </div>
-
 
           <div className="settings-modern-form">
 
             <div className="settings-modern-field">
-
               <label>
                 <Building2 size={13} />
                 ORGANIZATION NAME
@@ -1017,12 +1128,9 @@ export default function Settings() {
                 }
                 placeholder="Organization name"
               />
-
             </div>
 
-
             <div className="settings-modern-field">
-
               <label>
                 <MapPin size={13} />
                 DEFAULT LOCATION
@@ -1039,12 +1147,9 @@ export default function Settings() {
                 }
                 placeholder="Default location"
               />
-
             </div>
 
-
             <div className="settings-modern-field">
-
               <label>
                 <Clock3 size={13} />
                 TIME ZONE
@@ -1059,7 +1164,6 @@ export default function Settings() {
                   )
                 }
               >
-
                 <option value="Asia/Kolkata">
                   India Standard Time (IST)
                 </option>
@@ -1067,53 +1171,34 @@ export default function Settings() {
                 <option value="UTC">
                   Coordinated Universal Time (UTC)
                 </option>
-
               </select>
-
             </div>
 
           </div>
-
         </div>
 
-
-        {/* ===================================================
-            NOTIFICATIONS
-        =================================================== */}
+        {/* NOTIFICATIONS */}
 
         <div className="settings-modern-card">
-
           <div className="settings-modern-card-header">
-
             <div className="settings-card-title-area">
-
               <div className="settings-card-icon">
                 <Bell size={19} />
               </div>
 
               <div>
-
-                <h2>
-                  Notifications
-                </h2>
-
+                <h2>Notifications</h2>
                 <p>
                   Control system notifications
                 </p>
-
               </div>
-
             </div>
-
           </div>
-
 
           <SettingToggle
             title="System Notifications"
             description="Receive important alerts about attendance, security and system activity."
-            enabled={
-              settings.notifications_enabled
-            }
+            enabled={settings.notifications_enabled}
             onChange={() =>
               updateField(
                 "notifications_enabled",
@@ -1121,40 +1206,25 @@ export default function Settings() {
               )
             }
           />
-
         </div>
 
-
-        {/* ===================================================
-            LOCATION & PRIVACY
-        =================================================== */}
+        {/* LOCATION */}
 
         <div className="settings-modern-card">
-
           <div className="settings-modern-card-header">
-
             <div className="settings-card-title-area">
-
               <div className="settings-card-icon">
                 <MapPin size={19} />
               </div>
 
               <div>
-
-                <h2>
-                  Location & Privacy
-                </h2>
-
+                <h2>Location & Privacy</h2>
                 <p>
                   Employee location monitoring controls
                 </p>
-
               </div>
-
             </div>
-
           </div>
-
 
           <SettingToggle
             title="Live Location Tracking"
@@ -1169,40 +1239,25 @@ export default function Settings() {
               )
             }
           />
-
         </div>
 
-
-        {/* ===================================================
-            FACE RECOGNITION
-        =================================================== */}
+        {/* FACE */}
 
         <div className="settings-modern-card">
-
           <div className="settings-modern-card-header">
-
             <div className="settings-card-title-area">
-
               <div className="settings-card-icon">
                 <Camera size={19} />
               </div>
 
               <div>
-
-                <h2>
-                  Face Recognition
-                </h2>
-
+                <h2>Face Recognition</h2>
                 <p>
                   Biometric attendance verification
                 </p>
-
               </div>
-
             </div>
-
           </div>
-
 
           <SettingToggle
             title="Face Recognition"
@@ -1217,45 +1272,29 @@ export default function Settings() {
               )
             }
           />
-
         </div>
 
-
-        {/* ===================================================
-            SECURITY
-        =================================================== */}
+        {/* SECURITY */}
 
         <div className="settings-modern-card">
-
           <div className="settings-modern-card-header">
-
             <div className="settings-card-title-area">
-
               <div className="settings-card-icon">
                 <Lock size={19} />
               </div>
 
               <div>
-
-                <h2>
-                  Security
-                </h2>
-
+                <h2>Security</h2>
                 <p>
                   Account and authentication settings
                 </p>
-
               </div>
-
             </div>
-
           </div>
-
 
           <div className="settings-security-box">
 
             <div className="settings-security-info">
-
               <strong>
                 Administrator Security
               </strong>
@@ -1264,40 +1303,278 @@ export default function Settings() {
                 Manage your password and authentication
                 preferences.
               </span>
-
             </div>
-
 
             <button
               type="button"
               className="settings-password-button"
-              onClick={() =>
-                alert(
-                  "Password change functionality will be connected here."
-                )
-              }
+              onClick={openPasswordModal}
             >
-
               <Lock size={15} />
-
               Change Password
-
             </button>
 
           </div>
-
         </div>
 
       </div>
 
+      {/* PASSWORD MODAL */}
+
+      {showPasswordModal && (
+        <div
+          className="password-modal-backdrop"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !passwordChanging
+            ) {
+              closePasswordModal();
+            }
+          }}
+        >
+          <div
+            className="password-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="change-password-title"
+          >
+
+            <div className="password-modal-header">
+
+              <div className="password-modal-title">
+
+                <div className="password-modal-icon">
+                  <Lock size={19} />
+                </div>
+
+                <div>
+                  <h3 id="change-password-title">
+                    Change Password
+                  </h3>
+
+                  <p>
+                    Update your administrator password
+                  </p>
+                </div>
+
+              </div>
+
+              <button
+                type="button"
+                className="password-modal-close"
+                onClick={closePasswordModal}
+                disabled={passwordChanging}
+                aria-label="Close"
+              >
+                <X size={17} />
+              </button>
+
+            </div>
+
+            <div className="password-modal-body">
+
+              <form
+                className="password-form"
+                onSubmit={handlePasswordChange}
+              >
+
+                <div className="password-field">
+                  <label>
+                    CURRENT PASSWORD
+                  </label>
+
+                  <div className="password-input-wrap">
+
+                    <input
+                      type={
+                        showCurrentPassword
+                          ? "text"
+                          : "password"
+                      }
+                      value={currentPassword}
+                      onChange={(event) =>
+                        setCurrentPassword(
+                          event.target.value
+                        )
+                      }
+                      placeholder="Enter current password"
+                      autoComplete="current-password"
+                    />
+
+                    <button
+                      type="button"
+                      className="password-eye"
+                      onClick={() =>
+                        setShowCurrentPassword(
+                          (value) => !value
+                        )
+                      }
+                      aria-label={
+                        showCurrentPassword
+                          ? "Hide password"
+                          : "Show password"
+                      }
+                    >
+                      {showCurrentPassword ? (
+                        <EyeOff size={17} />
+                      ) : (
+                        <Eye size={17} />
+                      )}
+                    </button>
+
+                  </div>
+                </div>
+
+                <div className="password-field">
+                  <label>
+                    NEW PASSWORD
+                  </label>
+
+                  <div className="password-input-wrap">
+
+                    <input
+                      type={
+                        showNewPassword
+                          ? "text"
+                          : "password"
+                      }
+                      value={newPassword}
+                      onChange={(event) =>
+                        setNewPassword(
+                          event.target.value
+                        )
+                      }
+                      placeholder="Minimum 8 characters"
+                      autoComplete="new-password"
+                    />
+
+                    <button
+                      type="button"
+                      className="password-eye"
+                      onClick={() =>
+                        setShowNewPassword(
+                          (value) => !value
+                        )
+                      }
+                      aria-label={
+                        showNewPassword
+                          ? "Hide password"
+                          : "Show password"
+                      }
+                    >
+                      {showNewPassword ? (
+                        <EyeOff size={17} />
+                      ) : (
+                        <Eye size={17} />
+                      )}
+                    </button>
+
+                  </div>
+                </div>
+
+                <div className="password-field">
+                  <label>
+                    CONFIRM NEW PASSWORD
+                  </label>
+
+                  <div className="password-input-wrap">
+
+                    <input
+                      type={
+                        showConfirmPassword
+                          ? "text"
+                          : "password"
+                      }
+                      value={confirmPassword}
+                      onChange={(event) =>
+                        setConfirmPassword(
+                          event.target.value
+                        )
+                      }
+                      placeholder="Confirm new password"
+                      autoComplete="new-password"
+                    />
+
+                    <button
+                      type="button"
+                      className="password-eye"
+                      onClick={() =>
+                        setShowConfirmPassword(
+                          (value) => !value
+                        )
+                      }
+                      aria-label={
+                        showConfirmPassword
+                          ? "Hide password"
+                          : "Show password"
+                      }
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff size={17} />
+                      ) : (
+                        <Eye size={17} />
+                      )}
+                    </button>
+
+                  </div>
+                </div>
+
+                {passwordError && (
+                  <div className="password-error">
+                    {passwordError}
+                  </div>
+                )}
+
+                {passwordSuccess && (
+                  <div className="password-success">
+                    <CheckCircle2
+                      size={14}
+                      style={{
+                        verticalAlign: "middle",
+                        marginRight: 6,
+                      }}
+                    />
+                    {passwordSuccess}
+                  </div>
+                )}
+
+                <div className="password-modal-actions">
+
+                  <button
+                    type="button"
+                    className="password-cancel"
+                    onClick={closePasswordModal}
+                    disabled={passwordChanging}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="password-submit"
+                    disabled={passwordChanging}
+                  >
+                    <Lock size={15} />
+
+                    {passwordChanging
+                      ? "Changing..."
+                      : "Change Password"}
+                  </button>
+
+                </div>
+
+              </form>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </section>
   );
 }
-
-
-/* =========================================================
-   TOGGLE COMPONENT
-========================================================= */
 
 function SettingToggle({
   title,
@@ -1315,16 +1592,11 @@ function SettingToggle({
 
       <div className="settings-toggle-info">
 
-        <strong>
-          {title}
-        </strong>
+        <strong>{title}</strong>
 
-        <span>
-          {description}
-        </span>
+        <span>{description}</span>
 
       </div>
-
 
       <button
         type="button"
@@ -1339,9 +1611,7 @@ function SettingToggle({
         }`}
         onClick={onChange}
       >
-
         <span />
-
       </button>
 
     </div>
