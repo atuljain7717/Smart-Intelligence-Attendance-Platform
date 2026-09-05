@@ -1,4 +1,3 @@
-
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
@@ -25,6 +24,7 @@ from app.core.security import (
     hash_password,
     verify_password,
     create_access_token,
+    decode_access_token,
 )
 
 
@@ -97,6 +97,20 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+    )
+
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=100,
+    )
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -206,6 +220,7 @@ def register(
 
     except Exception:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to create user account.",
@@ -323,7 +338,9 @@ def login(
     # NORMALIZE ROLE
     # --------------------------------------------------------
 
-    role = str(user["role"] or "employee").strip().lower()
+    role = str(
+        user["role"] or "employee"
+    ).strip().lower()
 
     # --------------------------------------------------------
     # CREATE JWT
@@ -352,6 +369,206 @@ def login(
             "role": role,
             "is_active": user["is_active"],
         },
+    }
+
+
+# ============================================================
+# CHANGE PASSWORD
+# ============================================================
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Change the currently authenticated user's password.
+
+    Requires:
+        Authorization: Bearer <access_token>
+    """
+
+    # --------------------------------------------------------
+    # GET AUTHORIZATION HEADER
+    # --------------------------------------------------------
+
+    authorization = request.headers.get("Authorization")
+
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+
+    # --------------------------------------------------------
+    # CHECK BEARER TOKEN
+    # --------------------------------------------------------
+
+    parts = authorization.strip().split()
+
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials.",
+        )
+
+    token = parts[1]
+
+    # --------------------------------------------------------
+    # DECODE JWT
+    # --------------------------------------------------------
+
+    payload = decode_access_token(token)
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authentication token.",
+        )
+
+    # --------------------------------------------------------
+    # GET USER ID FROM TOKEN
+    # --------------------------------------------------------
+
+    user_id = payload.get("sub")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token.",
+        )
+
+    # --------------------------------------------------------
+    # FIND CURRENT USER
+    # --------------------------------------------------------
+
+    user = db.execute(
+        text("""
+            SELECT
+                id,
+                name,
+                email,
+                password_hash,
+                role,
+                is_active
+            FROM public.users
+            WHERE id = :user_id
+            LIMIT 1
+        """),
+        {
+            "user_id": user_id,
+        },
+    ).mappings().first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User account not found.",
+        )
+
+    # --------------------------------------------------------
+    # CHECK ACCOUNT STATUS
+    # --------------------------------------------------------
+
+    if not user["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is inactive.",
+        )
+
+    # --------------------------------------------------------
+    # CHECK EXISTING PASSWORD
+    # --------------------------------------------------------
+
+    if not user["password_hash"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password login is not configured for this account.",
+        )
+
+    try:
+        current_password_valid = verify_password(
+            data.current_password,
+            str(user["password_hash"]),
+        )
+
+    except Exception as exc:
+        print(
+            "Current password verification error:",
+            type(exc).__name__,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to verify current password.",
+        )
+
+    if not current_password_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+
+    # --------------------------------------------------------
+    # PREVENT SAME PASSWORD
+    # --------------------------------------------------------
+
+    if data.current_password == data.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "New password must be different "
+                "from your current password."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # HASH NEW PASSWORD
+    # --------------------------------------------------------
+
+    new_password_hash = hash_password(
+        data.new_password
+    )
+
+    # --------------------------------------------------------
+    # UPDATE PASSWORD
+    # --------------------------------------------------------
+
+    try:
+        db.execute(
+            text("""
+                UPDATE public.users
+                SET password_hash = :password_hash
+                WHERE id = :user_id
+            """),
+            {
+                "password_hash": new_password_hash,
+                "user_id": user["id"],
+            },
+        )
+
+        db.commit()
+
+    except Exception as exc:
+        db.rollback()
+
+        print(
+            "Password update error:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to change password.",
+        )
+
+    # --------------------------------------------------------
+    # SUCCESS
+    # --------------------------------------------------------
+
+    return {
+        "message": "Password changed successfully."
     }
 
 
