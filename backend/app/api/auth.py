@@ -1,3 +1,4 @@
+
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
@@ -87,9 +88,10 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
 
+    # Updated: minimum 8 characters
     password: str = Field(
         ...,
-        min_length=6,
+        min_length=8,
         max_length=100,
     )
 
@@ -125,7 +127,7 @@ class ResetPasswordRequest(BaseModel):
 
     new_password: str = Field(
         ...,
-        min_length=6,
+        min_length=8,
         max_length=100,
     )
 
@@ -218,8 +220,13 @@ def register(
 
         db.commit()
 
-    except Exception:
+    except Exception as exc:
         db.rollback()
+
+        print(
+            "Registration database error:",
+            repr(exc),
+        )
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -389,10 +396,6 @@ def change_password(
         Authorization: Bearer <access_token>
     """
 
-    # --------------------------------------------------------
-    # GET AUTHORIZATION HEADER
-    # --------------------------------------------------------
-
     authorization = request.headers.get("Authorization")
 
     if not authorization:
@@ -400,10 +403,6 @@ def change_password(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
         )
-
-    # --------------------------------------------------------
-    # CHECK BEARER TOKEN
-    # --------------------------------------------------------
 
     parts = authorization.strip().split()
 
@@ -415,10 +414,6 @@ def change_password(
 
     token = parts[1]
 
-    # --------------------------------------------------------
-    # DECODE JWT
-    # --------------------------------------------------------
-
     payload = decode_access_token(token)
 
     if not payload:
@@ -427,10 +422,6 @@ def change_password(
             detail="Invalid or expired authentication token.",
         )
 
-    # --------------------------------------------------------
-    # GET USER ID FROM TOKEN
-    # --------------------------------------------------------
-
     user_id = payload.get("sub")
 
     if not user_id:
@@ -438,10 +429,6 @@ def change_password(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token.",
         )
-
-    # --------------------------------------------------------
-    # FIND CURRENT USER
-    # --------------------------------------------------------
 
     user = db.execute(
         text("""
@@ -467,19 +454,11 @@ def change_password(
             detail="User account not found.",
         )
 
-    # --------------------------------------------------------
-    # CHECK ACCOUNT STATUS
-    # --------------------------------------------------------
-
     if not user["is_active"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account is inactive.",
         )
-
-    # --------------------------------------------------------
-    # CHECK EXISTING PASSWORD
-    # --------------------------------------------------------
 
     if not user["password_hash"]:
         raise HTTPException(
@@ -510,10 +489,6 @@ def change_password(
             detail="Current password is incorrect.",
         )
 
-    # --------------------------------------------------------
-    # PREVENT SAME PASSWORD
-    # --------------------------------------------------------
-
     if data.current_password == data.new_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -523,17 +498,9 @@ def change_password(
             ),
         )
 
-    # --------------------------------------------------------
-    # HASH NEW PASSWORD
-    # --------------------------------------------------------
-
     new_password_hash = hash_password(
         data.new_password
     )
-
-    # --------------------------------------------------------
-    # UPDATE PASSWORD
-    # --------------------------------------------------------
 
     try:
         db.execute(
@@ -562,10 +529,6 @@ def change_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to change password.",
         )
-
-    # --------------------------------------------------------
-    # SUCCESS
-    # --------------------------------------------------------
 
     return {
         "message": "Password changed successfully."
@@ -673,10 +636,6 @@ async def google_callback(
             detail="Google authentication failed.",
         )
 
-    # --------------------------------------------------------
-    # GOOGLE USER INFORMATION
-    # --------------------------------------------------------
-
     google_email = user_info.get("email")
     google_name = user_info.get("name")
 
@@ -783,8 +742,13 @@ async def google_callback(
 
             db.commit()
 
-        except Exception:
+        except Exception as exc:
             db.rollback()
+
+            print(
+                "Google account creation error:",
+                repr(exc),
+            )
 
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1141,8 +1105,13 @@ def reset_password(
 
         db.commit()
 
-    except Exception:
+    except Exception as exc:
         db.rollback()
+
+        print(
+            "Password reset database error:",
+            repr(exc),
+        )
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

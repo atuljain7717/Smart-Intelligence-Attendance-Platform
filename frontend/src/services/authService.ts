@@ -39,6 +39,17 @@ export interface ResetPasswordResponse {
   message: string;
 }
 
+
+// ============================================================
+// API BASE URL
+// ============================================================
+
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
+
+
 // ============================================================
 // NORMAL LOGIN
 // ============================================================
@@ -54,14 +65,23 @@ export async function login(
   return response.data;
 }
 
+
 // ============================================================
 // GOOGLE LOGIN
 // ============================================================
 
 export function loginWithGoogle(): void {
-  window.location.href =
-    "http://localhost:8000/api/auth/google/login";
+  const googleLoginUrl =
+    `${API_BASE_URL}/api/auth/google/login`;
+
+  console.log(
+    "Starting Google authentication:",
+    googleLoginUrl
+  );
+
+  window.location.assign(googleLoginUrl);
 }
+
 
 // ============================================================
 // FORGOT PASSWORD
@@ -79,6 +99,7 @@ export async function forgotPassword(
   return response.data;
 }
 
+
 // ============================================================
 // RESET PASSWORD
 // ============================================================
@@ -95,24 +116,26 @@ export async function resetPassword(
   return response.data;
 }
 
+
 // ============================================================
 // LOGOUT
 // ============================================================
 
 export function logout(): void {
-  // Remove the current authentication token
+  // Current authentication token
   localStorage.removeItem("access_token");
 
-  // Remove legacy token if it exists
+  // Legacy token
   localStorage.removeItem("token");
 
-  // Remove stored user information
+  // Stored user information
   localStorage.removeItem("user");
 
-  // Remove any possible authentication/session leftovers
+  // Other possible authentication leftovers
   localStorage.removeItem("auth_token");
   localStorage.removeItem("authToken");
 }
+
 
 // ============================================================
 // GET STORED TOKEN
@@ -124,6 +147,7 @@ export function getToken(): string | null {
     localStorage.getItem("token")
   );
 }
+
 
 // ============================================================
 // GET STORED USER

@@ -1,3 +1,4 @@
+
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -37,7 +38,7 @@ export default function Register() {
     setError("");
 
     const cleanName = name.trim();
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
 
     if (cleanName.length < 2) {
       setError("Please enter your full name.");
@@ -49,9 +50,9 @@ export default function Register() {
       return;
     }
 
-    if (password.length < 6) {
+    if (password.length < 8) {
       setError(
-        "Password must contain at least 6 characters."
+        "Password must contain at least 8 characters."
       );
       return;
     }
@@ -331,6 +332,7 @@ export default function Register() {
 
         {error && (
           <div
+            role="alert"
             style={{
               marginBottom: "20px",
               padding: "12px 14px",
@@ -508,12 +510,11 @@ export default function Register() {
               autoComplete="new-password"
               disabled={loading}
               required
-              minLength={6}
+              minLength={8}
               style={{
                 width: "100%",
                 height: "48px",
-                padding:
-                  "0 44px 0 42px",
+                padding: "0 44px 0 42px",
                 border: "1px solid #cbd5e1",
                 borderRadius: "9px",
                 outline: "none",
@@ -525,9 +526,7 @@ export default function Register() {
             <button
               type="button"
               onClick={() =>
-                setShowPassword(
-                  !showPassword
-                )
+                setShowPassword(!showPassword)
               }
               disabled={loading}
               aria-label={
@@ -596,20 +595,17 @@ export default function Register() {
               }
               value={confirmPassword}
               onChange={(event) =>
-                setConfirmPassword(
-                  event.target.value
-                )
+                setConfirmPassword(event.target.value)
               }
               placeholder="Confirm your password"
               autoComplete="new-password"
               disabled={loading}
               required
-              minLength={6}
+              minLength={8}
               style={{
                 width: "100%",
                 height: "48px",
-                padding:
-                  "0 44px 0 42px",
+                padding: "0 44px 0 42px",
                 border: "1px solid #cbd5e1",
                 borderRadius: "9px",
                 outline: "none",
