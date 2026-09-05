@@ -1,4 +1,5 @@
-﻿import {
+﻿
+import {
   BrowserRouter,
   Navigate,
   Route,
@@ -22,6 +23,8 @@ import AuditLogs from "./pages/AuditLogs";
 import Settings from "./pages/Settings";
 
 import Login from "./pages/Login";
+import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import ForceLogout from "./pages/ForceLogout";
 import GoogleCallback from "./pages/GoogleCallback";
@@ -38,79 +41,66 @@ function AppLayout() {
 
         <main className="page-content">
           <Routes>
-            {/* Dashboard */}
             <Route
               path="/dashboard"
               element={<Dashboard />}
             />
 
-            {/* Employees */}
             <Route
               path="/employees"
               element={<Employees />}
             />
 
-            {/* Attendance */}
             <Route
               path="/attendance"
               element={<Attendance />}
             />
 
-            {/* Live Operations */}
             <Route
               path="/live-operations"
               element={<LiveOperations />}
             />
 
-            {/* Live Employee Location */}
             <Route
               path="/live-location"
               element={<LiveLocation />}
             />
 
-            {/* Locations */}
             <Route
               path="/locations"
               element={<Locations />}
             />
 
-            {/* Face Recognition */}
             <Route
               path="/face-recognition"
               element={<FaceRecognition />}
             />
 
-            {/* Analytics */}
             <Route
               path="/analytics"
               element={<Analytics />}
             />
 
-            {/* Reports */}
             <Route
               path="/reports"
               element={<Reports />}
             />
 
-            {/* Existing Location Management route */}
             <Route
               path="/location-management"
               element={<Locations />}
             />
 
-            {/* Audit Logs */}
             <Route
               path="/audit-logs"
               element={<AuditLogs />}
             />
 
-            {/* Settings */}
             <Route
               path="/settings"
               element={<Settings />}
             />
 
-            {/* Default */}
             <Route
               path="/"
               element={
@@ -121,7 +111,6 @@ function AppLayout() {
               }
             />
 
-            {/* Unknown protected route */}
             <Route
               path="*"
               element={
@@ -150,6 +139,18 @@ export default function App() {
         <Route
           path="/login"
           element={<Login />}
+        />
+
+        {/* Create Account */}
+        <Route
+          path="/register"
+          element={<Register />}
+        />
+
+        {/* Forgot Password */}
+        <Route
+          path="/forgot-password"
+          element={<ForgotPassword />}
         />
 
         {/* Google OAuth Callback */}
