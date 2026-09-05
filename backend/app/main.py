@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import settings
+from app.database.schema import ensure_schema
 
 from app.api.attendance import router as attendance_router
 from app.api.users import router as users_router
@@ -17,10 +18,6 @@ from app.api.audit_logs import router as audit_logs_router
 from app.api.settings import router as settings_router
 
 
-# ============================================================
-# APPLICATION
-# ============================================================
-
 app = FastAPI(
     title="Smart Attendance Intelligence API",
     version="1.0.0",
@@ -28,19 +25,14 @@ app = FastAPI(
 )
 
 
-# ============================================================
-# SESSION MIDDLEWARE
-# ============================================================
-# Required by Authlib for storing OAuth state between:
-#
-# /api/auth/google/login
-#              ↓
-#           Google
-#              ↓
-# /api/auth/google/callback
-#
-# IMPORTANT:
-# SECRET_KEY must remain the same between server restarts.
+@app.on_event("startup")
+def startup_schema_check():
+    try:
+        ensure_schema()
+    except Exception as exc:
+        print(f"Database schema check failed: {exc}")
+        raise
+
 
 app.add_middleware(
     SessionMiddleware,
@@ -49,10 +41,6 @@ app.add_middleware(
     https_only=False,
 )
 
-
-# ============================================================
-# CORS
-# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,10 +53,6 @@ app.add_middleware(
 )
 
 
-# ============================================================
-# API ROUTERS
-# ============================================================
-
 app.include_router(attendance_router)
 app.include_router(users_router)
 app.include_router(dashboard_router)
@@ -76,23 +60,11 @@ app.include_router(locations_router)
 app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(reports_router)
-
-# Live employee GPS location API
 app.include_router(live_location_router)
-
-# Face recognition API
 app.include_router(face_router)
-
-# Audit logs API
 app.include_router(audit_logs_router)
-
-# Platform settings API
 app.include_router(settings_router)
 
-
-# ============================================================
-# ROOT
-# ============================================================
 
 @app.get("/")
 def root():
@@ -101,10 +73,6 @@ def root():
         "status": "running",
     }
 
-
-# ============================================================
-# HEALTH CHECK
-# ============================================================
 
 @app.get("/api/health")
 def health():
