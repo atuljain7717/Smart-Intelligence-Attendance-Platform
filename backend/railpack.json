@@ -2,7 +2,12 @@
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
     "aptPackages": [
-      "libxcb1"
+      "libxcb1",
+      "libglib2.0-0",
+      "libsm6",
+      "libxrender1",
+      "libxext6",
+      "libgl1"
     ]
   }
 }
