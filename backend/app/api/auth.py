@@ -1,3 +1,4 @@
+
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
@@ -27,6 +28,10 @@ from app.core.security import (
 )
 
 
+# ============================================================
+# ROUTER
+# ============================================================
+
 router = APIRouter(
     prefix="/api/auth",
     tags=["Authentication"],
@@ -47,7 +52,7 @@ oauth.register(
         "https://accounts.google.com/.well-known/openid-configuration"
     ),
     client_kwargs={
-        "scope": "openid email profile"
+        "scope": "openid email profile",
     },
 )
 
@@ -120,14 +125,28 @@ def register(
     data: RegisterRequest,
     db: Session = Depends(get_db),
 ):
+    email = str(data.email).strip().lower()
+    name = data.name.strip()
+
+    if len(name) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Name must contain at least 2 characters.",
+        )
+
+    # --------------------------------------------------------
+    # CHECK EXISTING USER
+    # --------------------------------------------------------
+
     existing_user = db.execute(
         text("""
             SELECT id
             FROM public.users
-            WHERE email = :email
+            WHERE LOWER(TRIM(email)) = :email
+            LIMIT 1
         """),
         {
-            "email": data.email,
+            "email": email,
         },
     ).first()
 
@@ -137,46 +156,60 @@ def register(
             detail="Email already registered.",
         )
 
-    password_hash = hash_password(
-        data.password
-    )
+    # --------------------------------------------------------
+    # HASH PASSWORD
+    # --------------------------------------------------------
 
-    user = db.execute(
-        text("""
-            INSERT INTO public.users
-            (
-                name,
-                email,
-                password_hash,
-                role,
-                created_at,
-                is_active
-            )
-            VALUES
-            (
-                :name,
-                :email,
-                :password_hash,
-                'employee',
-                CURRENT_TIMESTAMP,
-                TRUE
-            )
-            RETURNING
-                id,
-                name,
-                email,
-                role,
-                created_at,
-                is_active
-        """),
-        {
-            "name": data.name,
-            "email": data.email,
-            "password_hash": password_hash,
-        },
-    ).mappings().first()
+    password_hash = hash_password(data.password)
 
-    db.commit()
+    # --------------------------------------------------------
+    # CREATE EMPLOYEE
+    # --------------------------------------------------------
+
+    try:
+        user = db.execute(
+            text("""
+                INSERT INTO public.users
+                (
+                    name,
+                    email,
+                    password_hash,
+                    role,
+                    created_at,
+                    is_active
+                )
+                VALUES
+                (
+                    :name,
+                    :email,
+                    :password_hash,
+                    'employee',
+                    CURRENT_TIMESTAMP,
+                    TRUE
+                )
+                RETURNING
+                    id,
+                    name,
+                    email,
+                    role,
+                    created_at,
+                    is_active
+            """),
+            {
+                "name": name,
+                "email": email,
+                "password_hash": password_hash,
+            },
+        ).mappings().first()
+
+        db.commit()
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to create user account.",
+        )
 
     return {
         "message": "User registered successfully.",
@@ -193,6 +226,16 @@ def login(
     data: LoginRequest,
     db: Session = Depends(get_db),
 ):
+    # --------------------------------------------------------
+    # NORMALIZE EMAIL
+    # --------------------------------------------------------
+
+    email = str(data.email).strip().lower()
+
+    # --------------------------------------------------------
+    # FIND USER
+    # --------------------------------------------------------
+
     user = db.execute(
         text("""
             SELECT
@@ -203,18 +246,27 @@ def login(
                 role,
                 is_active
             FROM public.users
-            WHERE email = :email
+            WHERE LOWER(TRIM(email)) = :email
+            LIMIT 1
         """),
         {
-            "email": data.email,
+            "email": email,
         },
     ).mappings().first()
+
+    # --------------------------------------------------------
+    # USER NOT FOUND
+    # --------------------------------------------------------
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
         )
+
+    # --------------------------------------------------------
+    # ACCOUNT INACTIVE
+    # --------------------------------------------------------
 
     if not user["is_active"]:
         raise HTTPException(
@@ -225,6 +277,10 @@ def login(
             ),
         )
 
+    # --------------------------------------------------------
+    # PASSWORD LOGIN NOT AVAILABLE
+    # --------------------------------------------------------
+
     if not user["password_hash"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -234,22 +290,56 @@ def login(
             ),
         )
 
-    if not verify_password(
-        data.password,
-        user["password_hash"],
-    ):
+    # --------------------------------------------------------
+    # PASSWORD VERIFICATION
+    # --------------------------------------------------------
+
+    stored_hash = str(user["password_hash"])
+
+    try:
+        password_valid = verify_password(
+            data.password,
+            stored_hash,
+        )
+
+    except Exception as exc:
+        print(
+            "Password verification error:",
+            type(exc).__name__,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to verify account credentials.",
+        )
+
+    if not password_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
         )
 
+    # --------------------------------------------------------
+    # NORMALIZE ROLE
+    # --------------------------------------------------------
+
+    role = str(user["role"] or "employee").strip().lower()
+
+    # --------------------------------------------------------
+    # CREATE JWT
+    # --------------------------------------------------------
+
     access_token = create_access_token(
         {
             "sub": str(user["id"]),
             "email": user["email"],
-            "role": user["role"],
+            "role": role,
         }
     )
+
+    # --------------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------------
 
     return {
         "message": "Login successful.",
@@ -259,7 +349,7 @@ def login(
             "id": user["id"],
             "name": user["name"],
             "email": user["email"],
-            "role": user["role"],
+            "role": role,
             "is_active": user["is_active"],
         },
     }
@@ -274,13 +364,9 @@ async def google_login(
     request: Request,
 ):
     try:
-        redirect_uri = (
-            settings.GOOGLE_REDIRECT_URI
-        )
+        redirect_uri = settings.GOOGLE_REDIRECT_URI
 
-        print(
-            "========================================"
-        )
+        print("========================================")
         print("GOOGLE OAUTH LOGIN")
         print(
             "Client ID configured:",
@@ -294,9 +380,7 @@ async def google_login(
             "Redirect URI:",
             redirect_uri,
         )
-        print(
-            "========================================"
-        )
+        print("========================================")
 
         return await oauth.google.authorize_redirect(
             request,
@@ -325,20 +409,16 @@ async def google_callback(
     db: Session = Depends(get_db),
 ):
     try:
-        print(
-            "========================================"
-        )
+        print("========================================")
         print("GOOGLE OAUTH CALLBACK")
         print(
             "Callback URL:",
             str(request.url),
         )
-        print(
-            "========================================"
-        )
+        print("========================================")
 
         token = await oauth.google.authorize_access_token(
-            request
+            request,
         )
 
         print(
@@ -350,7 +430,7 @@ async def google_callback(
 
         if not user_info:
             user_info = await oauth.google.userinfo(
-                token=token
+                token=token,
             )
 
         print(
@@ -359,9 +439,7 @@ async def google_callback(
         )
 
     except Exception as exc:
-        print(
-            "========================================"
-        )
+        print("========================================")
         print("GOOGLE OAUTH ERROR")
         print(
             "Error type:",
@@ -371,9 +449,7 @@ async def google_callback(
             "Error:",
             repr(exc),
         )
-        print(
-            "========================================"
-        )
+        print("========================================")
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -384,13 +460,8 @@ async def google_callback(
     # GOOGLE USER INFORMATION
     # --------------------------------------------------------
 
-    google_email = user_info.get(
-        "email"
-    )
-
-    google_name = user_info.get(
-        "name"
-    )
+    google_email = user_info.get("email")
+    google_name = user_info.get("name")
 
     if not google_email:
         raise HTTPException(
@@ -401,10 +472,16 @@ async def google_callback(
             ),
         )
 
+    google_email = str(
+        google_email
+    ).strip().lower()
+
     if not google_name:
-        google_name = (
-            google_email.split("@")[0]
-        )
+        google_name = google_email.split("@")[0]
+
+    google_name = str(
+        google_name
+    ).strip()
 
     # --------------------------------------------------------
     # FIND EXISTING USER
@@ -419,7 +496,8 @@ async def google_callback(
                 role,
                 is_active
             FROM public.users
-            WHERE email = :email
+            WHERE LOWER(TRIM(email)) = :email
+            LIMIT 1
         """),
         {
             "email": google_email,
@@ -447,50 +525,67 @@ async def google_callback(
         )
 
     # --------------------------------------------------------
-    # NEW USER / GOOGLE SIGNUP
+    # NEW GOOGLE USER
     # --------------------------------------------------------
 
     else:
 
-        user = db.execute(
-            text("""
-                INSERT INTO public.users
-                (
-                    name,
-                    email,
-                    password_hash,
-                    role,
-                    created_at,
-                    is_active
-                )
-                VALUES
-                (
-                    :name,
-                    :email,
-                    NULL,
-                    'employee',
-                    CURRENT_TIMESTAMP,
-                    TRUE
-                )
-                RETURNING
-                    id,
-                    name,
-                    email,
-                    role,
-                    is_active
-            """),
-            {
-                "name": google_name,
-                "email": google_email,
-            },
-        ).mappings().first()
+        try:
+            user = db.execute(
+                text("""
+                    INSERT INTO public.users
+                    (
+                        name,
+                        email,
+                        password_hash,
+                        role,
+                        created_at,
+                        is_active
+                    )
+                    VALUES
+                    (
+                        :name,
+                        :email,
+                        NULL,
+                        'employee',
+                        CURRENT_TIMESTAMP,
+                        TRUE
+                    )
+                    RETURNING
+                        id,
+                        name,
+                        email,
+                        role,
+                        is_active
+                """),
+                {
+                    "name": google_name,
+                    "email": google_email,
+                },
+            ).mappings().first()
 
-        db.commit()
+            db.commit()
+
+        except Exception:
+            db.rollback()
+
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to create Google account.",
+            )
 
         print(
             "Google new user created:",
             google_email,
         )
+
+    # --------------------------------------------------------
+    # NORMALIZE ROLE
+    # --------------------------------------------------------
+
+    role = str(
+        user["role"] or "employee"
+    ).strip().lower()
 
     # --------------------------------------------------------
     # CREATE JWT
@@ -500,19 +595,19 @@ async def google_callback(
         {
             "sub": str(user["id"]),
             "email": user["email"],
-            "role": user["role"],
+            "role": role,
         }
     )
 
     # --------------------------------------------------------
-    # USER DATA FOR FRONTEND
+    # FRONTEND USER
     # --------------------------------------------------------
 
     frontend_user = {
         "id": user["id"],
         "name": user["name"],
         "email": user["email"],
-        "role": user["role"],
+        "role": role,
         "is_active": user["is_active"],
     }
 
@@ -554,7 +649,7 @@ async def google_callback(
     )
 
     return RedirectResponse(
-        url=frontend_url
+        url=frontend_url,
     )
 
 
@@ -567,6 +662,12 @@ async def forgot_password(
     data: ForgotPasswordRequest,
     db: Session = Depends(get_db),
 ):
+    email = str(data.email).strip().lower()
+
+    # --------------------------------------------------------
+    # FIND USER
+    # --------------------------------------------------------
+
     user = db.execute(
         text("""
             SELECT
@@ -574,13 +675,15 @@ async def forgot_password(
                 email,
                 name
             FROM public.users
-            WHERE email = :email
+            WHERE LOWER(TRIM(email)) = :email
+            LIMIT 1
         """),
         {
-            "email": data.email,
+            "email": email,
         },
     ).mappings().first()
 
+    # Always return generic response for unknown emails
     if not user:
         return {
             "message": (
@@ -590,9 +693,7 @@ async def forgot_password(
             )
         }
 
-    reset_token = secrets.token_urlsafe(
-        32
-    )
+    reset_token = secrets.token_urlsafe(32)
 
     token_hash = hashlib.sha256(
         reset_token.encode("utf-8")
@@ -659,7 +760,7 @@ async def forgot_password(
         )
 
     # --------------------------------------------------------
-    # DEVELOPMENT RESET URL
+    # RESET URL
     # --------------------------------------------------------
 
     reset_url = (
@@ -669,7 +770,7 @@ async def forgot_password(
     )
 
     # --------------------------------------------------------
-    # EMAIL
+    # SEND EMAIL
     # --------------------------------------------------------
 
     if (
@@ -746,6 +847,10 @@ def reset_password(
         data.token.encode("utf-8")
     ).hexdigest()
 
+    # --------------------------------------------------------
+    # FIND RESET TOKEN
+    # --------------------------------------------------------
+
     user = db.execute(
         text("""
             SELECT
@@ -754,6 +859,7 @@ def reset_password(
                 reset_token_expires_at
             FROM public.users
             WHERE reset_token_hash = :token_hash
+            LIMIT 1
         """),
         {
             "token_hash": token_hash,
@@ -765,6 +871,10 @@ def reset_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token.",
         )
+
+    # --------------------------------------------------------
+    # CHECK EXPIRATION
+    # --------------------------------------------------------
 
     expires_at = user[
         "reset_token_expires_at"
@@ -784,26 +894,43 @@ def reset_password(
             detail="Invalid or expired reset token.",
         )
 
+    # --------------------------------------------------------
+    # HASH NEW PASSWORD
+    # --------------------------------------------------------
+
     password_hash = hash_password(
         data.new_password
     )
 
-    db.execute(
-        text("""
-            UPDATE public.users
-            SET
-                password_hash = :password_hash,
-                reset_token_hash = NULL,
-                reset_token_expires_at = NULL
-            WHERE id = :user_id
-        """),
-        {
-            "password_hash": password_hash,
-            "user_id": user["id"],
-        },
-    )
+    # --------------------------------------------------------
+    # UPDATE PASSWORD
+    # --------------------------------------------------------
 
-    db.commit()
+    try:
+        db.execute(
+            text("""
+                UPDATE public.users
+                SET
+                    password_hash = :password_hash,
+                    reset_token_hash = NULL,
+                    reset_token_expires_at = NULL
+                WHERE id = :user_id
+            """),
+            {
+                "password_hash": password_hash,
+                "user_id": user["id"],
+            },
+        )
+
+        db.commit()
+
+    except Exception:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to reset password.",
+        )
 
     return {
         "message": "Password reset successfully."
