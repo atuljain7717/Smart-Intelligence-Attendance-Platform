@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import type { AuthUser } from "../services/authService";
@@ -11,94 +11,83 @@ export default function GoogleCallback() {
 
   const [error, setError] = useState("");
 
+  // Prevent the callback from being processed more than once.
+  const processedRef = useRef(false);
+
   useEffect(() => {
-    let cancelled = false;
+    if (processedRef.current) {
+      return;
+    }
 
-    const completeGoogleLogin = async () => {
-      try {
-        const token = searchParams.get("access_token");
-        const userEncoded = searchParams.get("user");
+    processedRef.current = true;
 
-        console.log("Google callback started");
-        console.log("Access token received:", Boolean(token));
-        console.log("User data received:", Boolean(userEncoded));
+    try {
+      const token = searchParams.get("access_token");
+      const userEncoded = searchParams.get("user");
 
-        if (!token || !userEncoded) {
-          throw new Error(
-            "Google authentication data is missing."
-          );
-        }
+      console.log("Google callback started");
+      console.log("Access token received:", Boolean(token));
+      console.log("User data received:", Boolean(userEncoded));
 
-        // ------------------------------------------------------
-        // DECODE USER
-        // ------------------------------------------------------
-
-        const normalizedBase64 = userEncoded
-          .replace(/-/g, "+")
-          .replace(/_/g, "/")
-          .padEnd(
-            userEncoded.length +
-              ((4 - (userEncoded.length % 4)) % 4),
-            "="
-          );
-
-        const binaryString = atob(normalizedBase64);
-
-        const bytes = Uint8Array.from(
-          binaryString,
-          (character) => character.charCodeAt(0)
-        );
-
-        const userJson = new TextDecoder().decode(bytes);
-
-        const user = JSON.parse(userJson) as AuthUser;
-
-        console.log("Google user decoded:", user.email);
-
-        if (cancelled) {
-          return;
-        }
-
-        // ------------------------------------------------------
-        // SAVE AUTH SESSION
-        // ------------------------------------------------------
-
-        setAuthSession(token, user);
-
-        console.log("Google session saved");
-
-        // ------------------------------------------------------
-        // REDIRECT IMMEDIATELY
-        // ------------------------------------------------------
-
-        if (!cancelled) {
-          navigate("/dashboard", {
-            replace: true,
-          });
-        }
-      } catch (err) {
-        console.error("Google callback error:", err);
-
-        if (cancelled) {
-          return;
-        }
-
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("user");
-
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Unable to complete Google authentication."
+      if (!token || !userEncoded) {
+        throw new Error(
+          "Google authentication data is missing."
         );
       }
-    };
 
-    completeGoogleLogin();
+      // ------------------------------------------------------
+      // DECODE USER
+      // ------------------------------------------------------
 
-    return () => {
-      cancelled = true;
-    };
+      const normalizedBase64 = userEncoded
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(
+          userEncoded.length +
+            ((4 - (userEncoded.length % 4)) % 4),
+          "="
+        );
+
+      const binaryString = atob(normalizedBase64);
+
+      const bytes = Uint8Array.from(
+        binaryString,
+        (character) => character.charCodeAt(0)
+      );
+
+      const userJson = new TextDecoder().decode(bytes);
+
+      const user = JSON.parse(userJson) as AuthUser;
+
+      console.log("Google user decoded:", user.email);
+
+      // ------------------------------------------------------
+      // SAVE AUTH SESSION
+      // ------------------------------------------------------
+
+      setAuthSession(token, user);
+
+      console.log("Google session saved");
+
+      // ------------------------------------------------------
+      // REDIRECT
+      // ------------------------------------------------------
+
+      navigate("/dashboard", {
+        replace: true,
+      });
+    } catch (err) {
+      console.error("Google callback error:", err);
+
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user");
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to complete Google authentication."
+      );
+    }
   }, [navigate, searchParams, setAuthSession]);
 
   // ------------------------------------------------------------
@@ -204,6 +193,7 @@ export default function GoogleCallback() {
               from {
                 transform: rotate(0deg);
               }
+
               to {
                 transform: rotate(360deg);
               }
