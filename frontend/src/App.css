@@ -4344,462 +4344,433 @@ a:focus-visible {
   }
 }
 
-
 /* =========================================================
-   DESKTOP / LAPTOP LAYOUT LOCK
-   Keeps the complete application in desktop layout
-   on mobile browsers.
+   FRESH RESPONSIVE SYSTEM
+   Desktop + Mobile
    ========================================================= */
 
-html,
-body,
-#root {
-  min-width: 1200px;
-}
-
-body {
-  overflow-x: auto;
-}
-
 /* =========================================================
-   APPLICATION SHELL
+   MOBILE — LOGIN + MINIMIZED SIDEBAR
    ========================================================= */
 
-.app-shell {
-  min-width: 1200px;
-  width: 100%;
-}
+@media (max-width: 720px) {
 
-.app-main {
-  margin-left: 260px !important;
-  min-width: 940px !important;
-}
+  /* -------------------------------------------------------
+     GLOBAL
+     ------------------------------------------------------- */
 
-/* =========================================================
-   SIDEBAR
-   ========================================================= */
-
-.sidebar {
-  width: 260px !important;
-}
-
-.sidebar-brand {
-  justify-content: flex-start !important;
-  padding: 0 22px !important;
-}
-
-.brand-text {
-  display: flex !important;
-}
-
-.sidebar-section-title {
-  display: block !important;
-}
-
-.nav-item {
-  justify-content: flex-start !important;
-  padding: 0 12px !important;
-}
-
-.nav-item span {
-  display: inline !important;
-}
-
-.nav-active-dot {
-  display: block !important;
-}
-
-.system-status div {
-  display: block !important;
-}
-
-/* =========================================================
-   TOPBAR
-   ========================================================= */
-
-.topbar {
-  min-width: 940px;
-  padding: 0 28px !important;
-}
-
-.topbar-search {
-  width: min(430px, 45vw) !important;
-}
-
-.topbar-actions {
-  gap: 10px !important;
-}
-
-.admin-profile {
-  display: flex !important;
-}
-
-.admin-info {
-  display: block !important;
-}
-
-.system-pill {
-  display: flex !important;
-}
-
-.notification-button {
-  display: grid !important;
-}
-
-.verified-icon {
-  display: inline !important;
-}
-
-/* =========================================================
-   PAGE CONTENT
-   ========================================================= */
-
-.page-content {
-  min-width: 940px;
-  padding: 30px !important;
-}
-
-.page-content > * {
-  max-width: 1500px;
-}
-
-/* =========================================================
-   DASHBOARD
-   ========================================================= */
-
-.dashboard-stat-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-}
-
-.dashboard-grid {
-  grid-template-columns:
-    minmax(0, 1.7fr)
-    minmax(300px, 0.8fr) !important;
-}
-
-.bottom-grid {
-  grid-template-columns:
-    minmax(0, 1.55fr)
-    minmax(300px, 0.75fr) !important;
-}
-
-.workforce-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-}
-
-.dashboard-header {
-  align-items: flex-end !important;
-  flex-direction: row !important;
-}
-
-.dashboard-header-actions {
-  width: auto !important;
-  align-items: center !important;
-  flex-direction: row !important;
-  justify-content: flex-end !important;
-}
-
-.dashboard-date,
-.dashboard-live-status,
-.dashboard-refresh-button {
-  width: auto !important;
-}
-
-/* =========================================================
-   EMPLOYEES
-   ========================================================= */
-
-.employees-header {
-  align-items: flex-end !important;
-  flex-direction: row !important;
-}
-
-.employees-add-button {
-  width: auto !important;
-}
-
-.employees-card-header {
-  align-items: center !important;
-  flex-direction: row !important;
-}
-
-.employees-count {
-  align-self: auto !important;
-}
-
-.employee-actions {
-  flex-wrap: nowrap !important;
-}
-
-.employees-table .employee-action {
-  width: 72px !important;
-  min-width: 72px !important;
-  height: 34px !important;
-  padding: 0 8px !important;
-  font-size: 9px !important;
-}
-
-.employees-table td:last-child {
-  min-width: 250px !important;
-}
-
-/* =========================================================
-   EMPLOYEE MODAL
-   ========================================================= */
-
-.employee-modal {
-  width: min(470px, 100%) !important;
-}
-
-.employee-form-actions {
-  flex-direction: row !important;
-}
-
-.employee-cancel-button,
-.employee-submit-button {
-  width: auto !important;
-}
-
-.employee-details-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-}
-
-/* =========================================================
-   ATTENDANCE
-   ========================================================= */
-
-.attendance-header {
-  align-items: flex-end !important;
-  flex-direction: row !important;
-}
-
-.attendance-refresh-button {
-  width: auto !important;
-}
-
-.attendance-summary {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-}
-
-.attendance-card-header {
-  align-items: center !important;
-  flex-direction: row !important;
-}
-
-.attendance-count {
-  align-self: auto !important;
-}
-
-.attendance-table-wrapper {
-  overflow-x: auto !important;
-}
-
-.attendance-table {
-  min-width: 1050px !important;
-}
-
-.attendance-table th,
-.attendance-table td {
-  padding-left: 18px !important;
-  padding-right: 18px !important;
-}
-
-/* =========================================================
-   LOGIN
-   ========================================================= */
-
-.login-page {
-  min-width: 1200px;
-  padding: 30px 20px !important;
-}
-
-.login-card {
-  width: min(430px, 100%) !important;
-  padding: 38px !important;
-  border-radius: 20px !important;
-}
-
-/* =========================================================
-   FACE RECOGNITION
-   ========================================================= */
-
-.face-camera-container {
-  min-height: 520px !important;
-}
-
-.face-camera-video {
-  height: 520px !important;
-}
-
-.face-guide-oval {
-  width: 250px !important;
-  height: 340px !important;
-}
-
-.face-security-info {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-}
-
-.face-camera-actions {
-  flex-direction: row !important;
-}
-
-.face-camera-actions button {
-  width: auto !important;
-}
-
-/* =========================================================
-   PREVENT MOBILE TEXT/CONTENT COLLAPSE
-   ========================================================= */
-
-.dashboard-page,
-.employees-page,
-.attendance-page,
-.face-recognition-page {
-  min-width: 900px;
-}
-
-.dashboard-stat-card,
-.attendance-stat-card,
-.operation-card,
-.dashboard-card,
-.attendance-card,
-.employees-card {
-  min-width: 0;
-}
-
-/* =========================================================
-   MOBILE BROWSER HORIZONTAL SCROLL
-   ========================================================= */
-
-@media (max-width: 1199px) {
   html,
   body,
   #root {
-    min-width: 1200px !important;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
   }
+
+  body {
+    min-height: 100vh;
+  }
+
+  /* -------------------------------------------------------
+     LOGIN PAGE
+     ------------------------------------------------------- */
+
+  .login-page {
+    width: 100%;
+    min-width: 0;
+    max-width: 100vw;
+    min-height: 100vh;
+
+    padding: 20px 14px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    box-sizing: border-box;
+
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 430px;
+    min-width: 0;
+
+    margin: 0 auto;
+    padding: 28px 22px;
+
+    box-sizing: border-box;
+  }
+
+  .login-page input,
+  .login-page button,
+  .login-page select,
+  .login-page textarea {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* -------------------------------------------------------
+     APPLICATION
+     ------------------------------------------------------- */
 
   .app-shell {
-    min-width: 1200px !important;
+    width: 100%;
+    min-width: 0;
+    max-width: 100vw;
+
+    overflow-x: hidden;
   }
+
+  /* -------------------------------------------------------
+     SIDEBAR — MINIMIZED
+     ------------------------------------------------------- */
 
   .sidebar {
-    width: 260px !important;
-  }
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
 
-  .app-main {
-    margin-left: 260px !important;
-    min-width: 940px !important;
-  }
-
-  .dashboard-stat-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  }
-
-  .workforce-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  }
-
-  .dashboard-grid {
-    grid-template-columns:
-      minmax(0, 1.7fr)
-      minmax(300px, 0.8fr) !important;
-  }
-
-  .bottom-grid {
-    grid-template-columns:
-      minmax(0, 1.55fr)
-      minmax(300px, 0.75fr) !important;
-  }
-
-  .attendance-summary {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    overflow-x: hidden;
   }
 
   .sidebar-brand {
-    justify-content: flex-start !important;
-    padding: 0 22px !important;
+    width: 72px;
+    min-width: 72px;
+
+    padding: 0;
+    justify-content: center;
   }
 
-  .brand-text,
-  .sidebar-section-title,
-  .nav-item span,
-  .system-status div {
-    display: block !important;
+  .brand-text {
+    display: none;
+  }
+
+  .sidebar-section-title {
+    display: none;
   }
 
   .nav-item {
-    justify-content: flex-start !important;
+    width: 72px;
+    min-width: 72px;
+
+    padding: 0;
+    margin: 0;
+
+    justify-content: center;
+  }
+
+  .nav-item span {
+    display: none;
+  }
+
+  .nav-item svg {
+    width: 20px;
+    height: 20px;
+
+    flex-shrink: 0;
+  }
+
+  .nav-active-dot {
+    display: block;
+  }
+
+  .system-status {
+    display: none;
+  }
+
+  /* -------------------------------------------------------
+     MAIN CONTENT
+     ------------------------------------------------------- */
+
+  .app-main {
+    width: calc(100% - 72px);
+    min-width: 0;
+    max-width: calc(100% - 72px);
+
+    margin-left: 72px;
+
+    overflow-x: hidden;
+  }
+
+  /* -------------------------------------------------------
+     TOPBAR
+     ------------------------------------------------------- */
+
+  .topbar {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+
+    padding: 0 14px;
+
+    box-sizing: border-box;
+  }
+
+  .topbar-search {
+    width: 100%;
+    max-width: 220px;
   }
 
   .admin-profile,
   .admin-info,
   .system-pill,
-  .notification-button {
-    display: flex !important;
+  .verified-icon {
+    display: none;
   }
 
-  .dashboard-header,
-  .employees-header,
-  .attendance-header {
-    align-items: flex-end !important;
-    flex-direction: row !important;
+  .notification-button {
+    display: grid;
+  }
+
+  /* -------------------------------------------------------
+     PAGE CONTENT
+     ------------------------------------------------------- */
+
+  .page-content {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+
+    padding: 18px;
+
+    box-sizing: border-box;
+
+    overflow-x: hidden;
+  }
+
+  /* -------------------------------------------------------
+     DASHBOARD
+     ------------------------------------------------------- */
+
+  .dashboard-page {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
   }
 
   .dashboard-header-actions {
-    width: auto !important;
-    flex-direction: row !important;
+    width: 100%;
+
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+
+    justify-content: flex-start;
+
+    gap: 8px;
   }
 
   .dashboard-date,
   .dashboard-live-status,
-  .dashboard-refresh-button,
-  .employees-add-button,
-  .attendance-refresh-button {
-    width: auto !important;
+  .dashboard-refresh-button {
+    width: auto;
   }
 
-  .employees-card-header,
-  .attendance-card-header {
-    align-items: center !important;
-    flex-direction: row !important;
+  .dashboard-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workforce-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-grid,
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* -------------------------------------------------------
+     EMPLOYEES
+     ------------------------------------------------------- */
+
+  .employees-page {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .employees-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .employees-add-button {
+    width: 100%;
+  }
+
+  .employees-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .employees-table-wrapper {
+    width: 100%;
+
+    overflow-x: auto;
+
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .employees-table {
+    min-width: 850px;
+  }
+
+  .employee-actions {
+    flex-wrap: nowrap;
+  }
+
+  /* -------------------------------------------------------
+     EMPLOYEE MODAL
+     ------------------------------------------------------- */
+
+  .employee-modal {
+    width: calc(100% - 28px);
+    max-width: 470px;
+    min-width: 0;
   }
 
   .employee-details-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: 1fr;
   }
 
   .employee-form-actions {
-    flex-direction: row !important;
+    flex-direction: column;
   }
 
   .employee-cancel-button,
   .employee-submit-button {
-    width: auto !important;
+    width: 100%;
+  }
+
+  /* -------------------------------------------------------
+     ATTENDANCE
+     ------------------------------------------------------- */
+
+  .attendance-page {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .attendance-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .attendance-refresh-button {
+    width: 100%;
+  }
+
+  .attendance-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .attendance-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .attendance-table-wrapper {
+    width: 100%;
+
+    overflow-x: auto;
+
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .attendance-table {
+    min-width: 1050px;
+  }
+
+  /* -------------------------------------------------------
+     FACE RECOGNITION
+     ------------------------------------------------------- */
+
+  .face-recognition-page {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .face-camera-container {
-    min-height: 520px !important;
+    width: 100%;
+    min-height: 420px;
   }
 
   .face-camera-video {
-    height: 520px !important;
+    width: 100%;
+    height: 420px;
+
+    object-fit: cover;
   }
 
   .face-guide-oval {
-    width: 250px !important;
-    height: 340px !important;
+    width: 190px;
+    height: 270px;
   }
 
   .face-security-info {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: 1fr;
   }
 
   .face-camera-actions {
-    flex-direction: row !important;
+    flex-direction: column;
   }
 
   .face-camera-actions button {
-    width: auto !important;
+    width: 100%;
   }
+}
+
+/* =========================================================
+   GLOBAL WIDTH RESET
+   ========================================================= */
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+img,
+canvas {
+  max-width: 100%;
 }
