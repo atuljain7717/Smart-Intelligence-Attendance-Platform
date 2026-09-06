@@ -4,9 +4,31 @@ body,
   margin: 0;
   padding: 0;
   width: 100%;
+  min-width: 1200px;
   min-height: 100%;
 }
 
+html {
+  overflow-x: auto;
+}
+
 body {
-  margin: 0;
+  min-width: 1200px;
+  overflow-x: auto;
+  background: var(--bg);
+}
+
+#root {
+  min-width: 1200px;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+img,
+svg,
+canvas {
+  max-width: none;
 }

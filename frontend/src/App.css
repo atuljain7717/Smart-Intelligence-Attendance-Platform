@@ -4345,3 +4345,461 @@ a:focus-visible {
 }
 
 
+/* =========================================================
+   DESKTOP / LAPTOP LAYOUT LOCK
+   Keeps the complete application in desktop layout
+   on mobile browsers.
+   ========================================================= */
+
+html,
+body,
+#root {
+  min-width: 1200px;
+}
+
+body {
+  overflow-x: auto;
+}
+
+/* =========================================================
+   APPLICATION SHELL
+   ========================================================= */
+
+.app-shell {
+  min-width: 1200px;
+  width: 100%;
+}
+
+.app-main {
+  margin-left: 260px !important;
+  min-width: 940px !important;
+}
+
+/* =========================================================
+   SIDEBAR
+   ========================================================= */
+
+.sidebar {
+  width: 260px !important;
+}
+
+.sidebar-brand {
+  justify-content: flex-start !important;
+  padding: 0 22px !important;
+}
+
+.brand-text {
+  display: flex !important;
+}
+
+.sidebar-section-title {
+  display: block !important;
+}
+
+.nav-item {
+  justify-content: flex-start !important;
+  padding: 0 12px !important;
+}
+
+.nav-item span {
+  display: inline !important;
+}
+
+.nav-active-dot {
+  display: block !important;
+}
+
+.system-status div {
+  display: block !important;
+}
+
+/* =========================================================
+   TOPBAR
+   ========================================================= */
+
+.topbar {
+  min-width: 940px;
+  padding: 0 28px !important;
+}
+
+.topbar-search {
+  width: min(430px, 45vw) !important;
+}
+
+.topbar-actions {
+  gap: 10px !important;
+}
+
+.admin-profile {
+  display: flex !important;
+}
+
+.admin-info {
+  display: block !important;
+}
+
+.system-pill {
+  display: flex !important;
+}
+
+.notification-button {
+  display: grid !important;
+}
+
+.verified-icon {
+  display: inline !important;
+}
+
+/* =========================================================
+   PAGE CONTENT
+   ========================================================= */
+
+.page-content {
+  min-width: 940px;
+  padding: 30px !important;
+}
+
+.page-content > * {
+  max-width: 1500px;
+}
+
+/* =========================================================
+   DASHBOARD
+   ========================================================= */
+
+.dashboard-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.dashboard-grid {
+  grid-template-columns:
+    minmax(0, 1.7fr)
+    minmax(300px, 0.8fr) !important;
+}
+
+.bottom-grid {
+  grid-template-columns:
+    minmax(0, 1.55fr)
+    minmax(300px, 0.75fr) !important;
+}
+
+.workforce-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.dashboard-header {
+  align-items: flex-end !important;
+  flex-direction: row !important;
+}
+
+.dashboard-header-actions {
+  width: auto !important;
+  align-items: center !important;
+  flex-direction: row !important;
+  justify-content: flex-end !important;
+}
+
+.dashboard-date,
+.dashboard-live-status,
+.dashboard-refresh-button {
+  width: auto !important;
+}
+
+/* =========================================================
+   EMPLOYEES
+   ========================================================= */
+
+.employees-header {
+  align-items: flex-end !important;
+  flex-direction: row !important;
+}
+
+.employees-add-button {
+  width: auto !important;
+}
+
+.employees-card-header {
+  align-items: center !important;
+  flex-direction: row !important;
+}
+
+.employees-count {
+  align-self: auto !important;
+}
+
+.employee-actions {
+  flex-wrap: nowrap !important;
+}
+
+.employees-table .employee-action {
+  width: 72px !important;
+  min-width: 72px !important;
+  height: 34px !important;
+  padding: 0 8px !important;
+  font-size: 9px !important;
+}
+
+.employees-table td:last-child {
+  min-width: 250px !important;
+}
+
+/* =========================================================
+   EMPLOYEE MODAL
+   ========================================================= */
+
+.employee-modal {
+  width: min(470px, 100%) !important;
+}
+
+.employee-form-actions {
+  flex-direction: row !important;
+}
+
+.employee-cancel-button,
+.employee-submit-button {
+  width: auto !important;
+}
+
+.employee-details-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+/* =========================================================
+   ATTENDANCE
+   ========================================================= */
+
+.attendance-header {
+  align-items: flex-end !important;
+  flex-direction: row !important;
+}
+
+.attendance-refresh-button {
+  width: auto !important;
+}
+
+.attendance-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.attendance-card-header {
+  align-items: center !important;
+  flex-direction: row !important;
+}
+
+.attendance-count {
+  align-self: auto !important;
+}
+
+.attendance-table-wrapper {
+  overflow-x: auto !important;
+}
+
+.attendance-table {
+  min-width: 1050px !important;
+}
+
+.attendance-table th,
+.attendance-table td {
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+}
+
+/* =========================================================
+   LOGIN
+   ========================================================= */
+
+.login-page {
+  min-width: 1200px;
+  padding: 30px 20px !important;
+}
+
+.login-card {
+  width: min(430px, 100%) !important;
+  padding: 38px !important;
+  border-radius: 20px !important;
+}
+
+/* =========================================================
+   FACE RECOGNITION
+   ========================================================= */
+
+.face-camera-container {
+  min-height: 520px !important;
+}
+
+.face-camera-video {
+  height: 520px !important;
+}
+
+.face-guide-oval {
+  width: 250px !important;
+  height: 340px !important;
+}
+
+.face-security-info {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.face-camera-actions {
+  flex-direction: row !important;
+}
+
+.face-camera-actions button {
+  width: auto !important;
+}
+
+/* =========================================================
+   PREVENT MOBILE TEXT/CONTENT COLLAPSE
+   ========================================================= */
+
+.dashboard-page,
+.employees-page,
+.attendance-page,
+.face-recognition-page {
+  min-width: 900px;
+}
+
+.dashboard-stat-card,
+.attendance-stat-card,
+.operation-card,
+.dashboard-card,
+.attendance-card,
+.employees-card {
+  min-width: 0;
+}
+
+/* =========================================================
+   MOBILE BROWSER HORIZONTAL SCROLL
+   ========================================================= */
+
+@media (max-width: 1199px) {
+  html,
+  body,
+  #root {
+    min-width: 1200px !important;
+  }
+
+  .app-shell {
+    min-width: 1200px !important;
+  }
+
+  .sidebar {
+    width: 260px !important;
+  }
+
+  .app-main {
+    margin-left: 260px !important;
+    min-width: 940px !important;
+  }
+
+  .dashboard-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .workforce-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .dashboard-grid {
+    grid-template-columns:
+      minmax(0, 1.7fr)
+      minmax(300px, 0.8fr) !important;
+  }
+
+  .bottom-grid {
+    grid-template-columns:
+      minmax(0, 1.55fr)
+      minmax(300px, 0.75fr) !important;
+  }
+
+  .attendance-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .sidebar-brand {
+    justify-content: flex-start !important;
+    padding: 0 22px !important;
+  }
+
+  .brand-text,
+  .sidebar-section-title,
+  .nav-item span,
+  .system-status div {
+    display: block !important;
+  }
+
+  .nav-item {
+    justify-content: flex-start !important;
+  }
+
+  .admin-profile,
+  .admin-info,
+  .system-pill,
+  .notification-button {
+    display: flex !important;
+  }
+
+  .dashboard-header,
+  .employees-header,
+  .attendance-header {
+    align-items: flex-end !important;
+    flex-direction: row !important;
+  }
+
+  .dashboard-header-actions {
+    width: auto !important;
+    flex-direction: row !important;
+  }
+
+  .dashboard-date,
+  .dashboard-live-status,
+  .dashboard-refresh-button,
+  .employees-add-button,
+  .attendance-refresh-button {
+    width: auto !important;
+  }
+
+  .employees-card-header,
+  .attendance-card-header {
+    align-items: center !important;
+    flex-direction: row !important;
+  }
+
+  .employee-details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .employee-form-actions {
+    flex-direction: row !important;
+  }
+
+  .employee-cancel-button,
+  .employee-submit-button {
+    width: auto !important;
+  }
+
+  .face-camera-container {
+    min-height: 520px !important;
+  }
+
+  .face-camera-video {
+    height: 520px !important;
+  }
+
+  .face-guide-oval {
+    width: 250px !important;
+    height: 340px !important;
+  }
+
+  .face-security-info {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .face-camera-actions {
+    flex-direction: row !important;
+  }
+
+  .face-camera-actions button {
+    width: auto !important;
+  }
+}
