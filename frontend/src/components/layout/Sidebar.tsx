@@ -10,9 +10,12 @@
   ClipboardList,
   Settings,
   Activity,
+  Menu,
+  X,
 } from "lucide-react";
 
 import { NavLink } from "react-router-dom";
+import { useState } from "react";
 
 const navigation = [
   {
@@ -73,8 +76,26 @@ const navigation = [
 ];
 
 export default function Sidebar() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const toggleMobileSidebar = () => {
+    setMobileOpen((previous) => !previous);
+  };
+
+  const closeMobileSidebar = () => {
+    setMobileOpen(false);
+  };
+
   return (
-    <aside className="sidebar">
+    <aside
+      className={`sidebar ${
+        mobileOpen ? "mobile-sidebar-open" : "mobile-sidebar-closed"
+      }`}
+    >
+      {/* =====================================================
+          SIDEBAR BRAND
+          ===================================================== */}
+
       <div className="sidebar-brand">
         <div className="brand-logo">
           SA
@@ -84,11 +105,37 @@ export default function Sidebar() {
           <strong>Smart Attendance</strong>
           <span>Intelligence Platform</span>
         </div>
+
+        {/* Mobile Toggle */}
+        <button
+          type="button"
+          className="mobile-sidebar-toggle"
+          onClick={toggleMobileSidebar}
+          aria-label={
+            mobileOpen
+              ? "Minimize sidebar"
+              : "Open sidebar"
+          }
+        >
+          {mobileOpen ? (
+            <X size={20} />
+          ) : (
+            <Menu size={20} />
+          )}
+        </button>
       </div>
+
+      {/* =====================================================
+          SECTION TITLE
+          ===================================================== */}
 
       <div className="sidebar-section-title">
         PLATFORM
       </div>
+
+      {/* =====================================================
+          NAVIGATION
+          ===================================================== */}
 
       <nav className="sidebar-nav">
         {navigation.map((item) => {
@@ -103,12 +150,15 @@ export default function Sidebar() {
                   ? "nav-item active"
                   : "nav-item"
               }
+              onClick={closeMobileSidebar}
             >
               {({ isActive }) => (
                 <>
                   <Icon
                     size={19}
-                    strokeWidth={isActive ? 2.4 : 2}
+                    strokeWidth={
+                      isActive ? 2.4 : 2
+                    }
                   />
 
                   <span>{item.name}</span>
@@ -122,6 +172,10 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* =====================================================
+          SIDEBAR FOOTER
+          ===================================================== */}
 
       <div className="sidebar-footer">
         <div className="system-status">
