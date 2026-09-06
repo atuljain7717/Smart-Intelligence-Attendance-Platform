@@ -1,4 +1,5 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+﻿
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,42 +15,80 @@ router = APIRouter(
 
 
 class SettingsUpdate(BaseModel):
-    organization_name: str = Field(
-        ...,
-        min_length=1,
-        max_length=255,
-    )
-
-    default_location: str = Field(
-        ...,
-        min_length=1,
-        max_length=255,
-    )
-
-    timezone: str = Field(
-        ...,
-        min_length=1,
-        max_length=100,
-    )
-
+    organization_name: str = Field(..., min_length=1, max_length=255)
+    default_location: str = Field(..., min_length=1, max_length=255)
+    timezone: str = Field(..., min_length=1, max_length=100)
     notifications_enabled: bool
     location_tracking_enabled: bool
     face_recognition_enabled: bool
 
 
 def require_admin(current_user: dict) -> None:
-    role = str(current_user.get("role", "")).lower()
-
-    if role != "admin":
+    if current_user.get("role") != "admin":
         raise HTTPException(
             status_code=403,
             detail="Admin access required.",
         )
 
 
-# ============================================================
-# GET SETTINGS
-# ============================================================
+def ensure_platform_settings(db: Session, user_id: int) -> None:
+    """
+    Make sure the platform_settings table has at least one row.
+    This is useful for fresh Railway/PostgreSQL deployments.
+    """
+
+    result = db.execute(
+        text(
+            """
+            SELECT id
+            FROM public.platform_settings
+            ORDER BY id
+            LIMIT 1
+            """
+        )
+    ).first()
+
+    if result:
+        return
+
+    db.execute(
+        text(
+            """
+            INSERT INTO public.platform_settings (
+                organization_name,
+                default_location,
+                timezone,
+                notifications_enabled,
+                location_tracking_enabled,
+                face_recognition_enabled,
+                updated_by,
+                updated_at
+            )
+            VALUES (
+                :organization_name,
+                :default_location,
+                :timezone,
+                :timezone,
+                :notifications_enabled,
+                :location_tracking_enabled,
+                :face_recognition_enabled,
+                CURRENT_TIMESTAMP
+            )
+            """
+        ),
+        {
+            "organization_name": "Smart Attendance Intelligence",
+            "default_location": "Aurangabad",
+            "timezone": "Asia/Kolkata",
+            "notifications_enabled": True,
+            "location_tracking_enabled": True,
+            "face_recognition_enabled": True,
+            "updated_by": user_id,
+        },
+    )
+
+    db.commit()
+
 
 @router.get("")
 def get_settings(
@@ -59,6 +98,11 @@ def get_settings(
     require_admin(current_user)
 
     try:
+        ensure_platform_settings(
+            db=db,
+            user_id=int(current_user["id"]),
+        )
+
         row = db.execute(
             text(
                 """
@@ -96,17 +140,16 @@ def get_settings(
     except Exception as exc:
         db.rollback()
 
-        print(f"GET /api/settings error: {exc}")
+        print(
+            f"GET /api/settings error: "
+            f"{type(exc).__name__}: {exc}"
+        )
 
         raise HTTPException(
             status_code=500,
             detail="Unable to load platform settings.",
         )
 
-
-# ============================================================
-# UPDATE SETTINGS
-# ============================================================
 
 @router.put("")
 def update_settings(
@@ -117,6 +160,11 @@ def update_settings(
     require_admin(current_user)
 
     try:
+        ensure_platform_settings(
+            db=db,
+            user_id=int(current_user["id"]),
+        )
+
         row = db.execute(
             text(
                 """
@@ -130,14 +178,12 @@ def update_settings(
                     face_recognition_enabled = :face_recognition_enabled,
                     updated_by = :updated_by,
                     updated_at = CURRENT_TIMESTAMP
-
                 WHERE id = (
                     SELECT id
                     FROM public.platform_settings
                     ORDER BY id
                     LIMIT 1
                 )
-
                 RETURNING
                     id,
                     organization_name,
@@ -157,7 +203,7 @@ def update_settings(
                 "notifications_enabled": data.notifications_enabled,
                 "location_tracking_enabled": data.location_tracking_enabled,
                 "face_recognition_enabled": data.face_recognition_enabled,
-                "updated_by": current_user["id"],
+                "updated_by": int(current_user["id"]),
             },
         ).mappings().first()
 
@@ -183,7 +229,10 @@ def update_settings(
     except Exception as exc:
         db.rollback()
 
-        print(f"PUT /api/settings error: {exc}")
+        print(
+            f"PUT /api/settings error: "
+            f"{type(exc).__name__}: {exc}"
+        )
 
         raise HTTPException(
             status_code=500,
