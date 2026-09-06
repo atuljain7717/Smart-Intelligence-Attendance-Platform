@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
 } from "react";
+
 import {
   AlertTriangle,
   ArrowRight,
@@ -11,8 +12,8 @@ import {
   CameraOff,
   CheckCircle2,
   CircleDot,
+  Clock3,
   Crosshair,
-  Fingerprint,
   Gauge,
   MapPin,
   Navigation,
@@ -22,11 +23,12 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
+
 import api from "../services/api";
 import { verifyFace } from "../services/faceRecognitionService";
 import { useAuth } from "../context/AuthContext";
 
-interface AttendanceLocation {
+interface LocationItem {
   id: number;
   name: string;
   latitude: number;
@@ -36,24 +38,12 @@ interface AttendanceLocation {
 }
 
 interface LocationResponse {
-  locations?: AttendanceLocation[];
-  data?: AttendanceLocation[];
-  items?: AttendanceLocation[];
+  locations?: LocationItem[];
+  data?: LocationItem[];
+  items?: LocationItem[];
 }
 
-interface CheckInResponse {
-  success?: boolean;
-  status?: string;
-  message?: string;
-  attendance_id?: number;
-  user_id?: number;
-  location?: string;
-  distance_meters?: number;
-  allowed_radius_meters?: number;
-}
-
-interface FaceVerificationResponse {
-  success?: boolean;
+interface FaceResponse {
   recognized?: boolean;
   user_id?: number;
   employee_name?: string;
@@ -62,20 +52,53 @@ interface FaceVerificationResponse {
   message?: string;
 }
 
+interface CheckInResponse {
+  status?: string;
+  message?: string;
+  attendance_id?: number;
+  distance_meters?: number;
+}
+
+interface AttendanceStatusResponse {
+  has_attendance?: boolean;
+  is_checked_in?: boolean;
+  attendance?: {
+    id?: number;
+    check_in?: string | null;
+    check_out?: string | null;
+    working_seconds?: number;
+    working_hours?: string;
+    is_checked_in?: boolean;
+  } | null;
+}
+
+interface CheckOutResponse {
+  status?: string;
+  message?: string;
+  attendance_id?: number;
+  check_in?: string;
+  check_out?: string;
+  working_seconds?: number;
+  working_hours?: string;
+}
+
 export default function FaceRecognition() {
   const { user } = useAuth();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const mountedRef = useRef(true);
 
-  const [locations, setLocations] = useState<AttendanceLocation[]>([]);
+  const [locations, setLocations] = useState<LocationItem[]>([]);
   const [selectedLocation, setSelectedLocation] = useState("");
+
   const [loadingLocations, setLoadingLocations] = useState(true);
+  const [loadingStatus, setLoadingStatus] = useState(true);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [startingCamera, setStartingCamera] = useState(false);
+
   const [processing, setProcessing] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -84,15 +107,86 @@ export default function FaceRecognition() {
   const [employeeName, setEmployeeName] = useState("");
   const [confidence, setConfidence] = useState<number | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
-  const [attendanceId, setAttendanceId] = useState<number | null>(null);
 
-  // ==========================================================
-  // STOP CAMERA
-  // ==========================================================
+  const [attendanceId, setAttendanceId] = useState<number | null>(null);
+  const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const [hasAttendance, setHasAttendance] = useState(false);
+
+  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  const [checkOutTime, setCheckOutTime] = useState<string | null>(null);
+  const [workingHours, setWorkingHours] = useState("");
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+
+  const apiError = (err: any, fallback: string) => {
+    const detail = err?.response?.data?.detail;
+
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item: any) => item?.msg || "Invalid request")
+        .join(", ");
+    }
+
+    if (typeof detail === "string") {
+      return detail;
+    }
+
+    if (err?.code === "ERR_NETWORK") {
+      return "Backend server is not reachable. Start FastAPI and try again.";
+    }
+
+    return err?.message || fallback;
+  };
+
+  const formatTime = (value: string | null) => {
+    if (!value) return "--";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const formatWorkingHours = (
+    seconds?: number,
+    fallback?: string
+  ) => {
+    if (fallback) return fallback;
+
+    if (
+      seconds === undefined ||
+      seconds === null ||
+      seconds < 0
+    ) {
+      return "--";
+    }
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    return `${hours}h ${minutes}m`;
+  };
+
+  // ============================================================
+  // CAMERA
+  // ============================================================
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop();
+      });
+
       streamRef.current = null;
     }
 
@@ -101,187 +195,19 @@ export default function FaceRecognition() {
       videoRef.current.srcObject = null;
     }
 
-    if (mountedRef.current) {
-      setCameraActive(false);
-    }
+    setCameraActive(false);
   }, []);
-
-  // ==========================================================
-  // CLEANUP
-  // ==========================================================
-
-  useEffect(() => {
-    mountedRef.current = true;
-
-    return () => {
-      mountedRef.current = false;
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-    };
-  }, []);
-
-  // ==========================================================
-  // ATTACH CAMERA
-  // ==========================================================
-
-  useEffect(() => {
-    if (!cameraActive) return;
-
-    const video = videoRef.current;
-    const stream = streamRef.current;
-
-    if (!video || !stream) return;
-
-    video.srcObject = stream;
-    video.autoplay = true;
-    video.muted = true;
-    video.playsInline = true;
-
-    const playVideo = async () => {
-      try {
-        await video.play();
-      } catch (err) {
-        console.error("Video playback error:", err);
-      }
-    };
-
-    void playVideo();
-  }, [cameraActive]);
-
-  // ==========================================================
-  // LOAD LOCATIONS
-  // ==========================================================
-
-  const loadLocations = useCallback(async () => {
-    try {
-      setLoadingLocations(true);
-      setError("");
-
-      const response = await api.get<
-        AttendanceLocation[] | LocationResponse
-      >("/api/locations/");
-
-      const payload = response.data;
-
-      let receivedLocations: AttendanceLocation[] = [];
-
-      if (Array.isArray(payload)) {
-        receivedLocations = payload;
-      } else if (
-        payload &&
-        typeof payload === "object" &&
-        Array.isArray(payload.locations)
-      ) {
-        receivedLocations = payload.locations;
-      } else if (
-        payload &&
-        typeof payload === "object" &&
-        Array.isArray(payload.data)
-      ) {
-        receivedLocations = payload.data;
-      } else if (
-        payload &&
-        typeof payload === "object" &&
-        Array.isArray(payload.items)
-      ) {
-        receivedLocations = payload.items;
-      }
-
-      const normalizedLocations: AttendanceLocation[] =
-        receivedLocations
-          .map((location) => ({
-            id: Number(location.id),
-            name: location.name || `Workplace ${location.id}`,
-            latitude: Number(location.latitude),
-            longitude: Number(location.longitude),
-            radius_meters: Number(location.radius_meters ?? 100),
-            is_active: location.is_active !== false,
-          }))
-          .filter(
-            (location) =>
-              Number.isFinite(location.id) &&
-              location.id > 0 &&
-              Number.isFinite(location.latitude) &&
-              Number.isFinite(location.longitude)
-          );
-
-      const activeLocations = normalizedLocations.filter(
-        (location) => location.is_active !== false
-      );
-
-      setLocations(activeLocations);
-
-      if (activeLocations.length === 0) {
-        setSelectedLocation("");
-        setError(
-          "No active workplace locations were found. Add a workplace location first."
-        );
-        return;
-      }
-
-      setSelectedLocation((current) => {
-        const currentStillExists = activeLocations.some(
-          (location) => String(location.id) === current
-        );
-
-        if (currentStillExists) {
-          return current;
-        }
-
-        return String(activeLocations[0].id);
-      });
-
-      setMessage(
-        `${activeLocations.length} workplace location${
-          activeLocations.length === 1 ? "" : "s"
-        } available.`
-      );
-    } catch (err: any) {
-      console.error("Failed to load workplace locations:", err);
-
-      setLocations([]);
-      setSelectedLocation("");
-
-      const detail = err?.response?.data?.detail;
-
-      if (Array.isArray(detail)) {
-        setError(
-          detail
-            .map(
-              (item: any) =>
-                item?.msg || "Invalid location request."
-            )
-            .join(", ")
-        );
-      } else if (typeof detail === "string") {
-        setError(detail);
-      } else if (err?.code === "ERR_NETWORK") {
-        setError(
-          "Cannot connect to the FastAPI server. Make sure the backend is running at http://127.0.0.1:8000."
-        );
-      } else {
-        setError(
-          "Unable to load workplace locations. Check the backend location API."
-        );
-      }
-    } finally {
-      setLoadingLocations(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadLocations();
-  }, [loadLocations]);
-
-  // ==========================================================
-  // START CAMERA
-  // ==========================================================
 
   const startCamera = async () => {
-    if (startingCamera || processing) return;
+    if (
+      startingCamera ||
+      processing ||
+      checkingOut ||
+      isCheckedIn ||
+      hasAttendance
+    ) {
+      return;
+    }
 
     try {
       setStartingCamera(true);
@@ -293,10 +219,10 @@ export default function FaceRecognition() {
 
       if (
         !navigator.mediaDevices ||
-        typeof navigator.mediaDevices.getUserMedia !== "function"
+        !navigator.mediaDevices.getUserMedia
       ) {
         throw new Error(
-          "Live camera is not supported by this browser."
+          "Your browser does not support live camera access."
         );
       }
 
@@ -304,20 +230,11 @@ export default function FaceRecognition() {
         await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "user",
-            width: {
-              ideal: 1280,
-            },
-            height: {
-              ideal: 720,
-            },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
           audio: false,
         });
-
-      if (!mountedRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
 
       streamRef.current = stream;
       setCameraActive(true);
@@ -326,127 +243,315 @@ export default function FaceRecognition() {
         "Live camera ready. Position your face inside the guide."
       );
     } catch (err: any) {
-      console.error("Camera error:", err);
-
-      let cameraMessage =
-        "Unable to access the live camera.";
+      console.error(err);
 
       if (
         err?.name === "NotAllowedError" ||
         err?.name === "PermissionDeniedError"
       ) {
-        cameraMessage =
-          "Camera permission was denied. Allow camera access for this site and try again.";
+        setError(
+          "Camera permission was denied. Allow camera access and try again."
+        );
       } else if (err?.name === "NotFoundError") {
-        cameraMessage =
-          "No camera was found on this device.";
+        setError("No camera was found on this device.");
       } else if (err?.name === "NotReadableError") {
-        cameraMessage =
-          "The camera is already being used by another application.";
-      } else if (err?.name === "OverconstrainedError") {
-        cameraMessage =
-          "The requested camera settings are not available.";
-      } else if (err?.message) {
-        cameraMessage = err.message;
+        setError(
+          "Camera is already being used by another application."
+        );
+      } else {
+        setError(
+          apiError(err, "Unable to start camera.")
+        );
       }
-
-      setError(cameraMessage);
-      setCameraActive(false);
     } finally {
       setStartingCamera(false);
     }
   };
 
-  // ==========================================================
-  // CAPTURE LIVE FRAME
-  // ==========================================================
+  useEffect(() => {
+    if (!cameraActive) return;
 
-  const captureLiveFrame =
-    (): Promise<File | null> =>
-      new Promise((resolve) => {
-        const video = videoRef.current;
+    const video = videoRef.current;
+    const stream = streamRef.current;
 
-        if (!video) {
-          resolve(null);
-          return;
-        }
+    if (!video || !stream) return;
 
-        if (
-          video.readyState <
-          HTMLMediaElement.HAVE_CURRENT_DATA
-        ) {
-          resolve(null);
-          return;
-        }
+    video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
 
-        if (
-          video.videoWidth <= 0 ||
-          video.videoHeight <= 0
-        ) {
-          resolve(null);
-          return;
-        }
+    void video.play().catch((err) => {
+      console.error("Video playback error:", err);
+    });
+  }, [cameraActive]);
 
-        const canvas = document.createElement("canvas");
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => {
+          track.stop();
+        });
+      }
+    };
+  }, []);
 
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+  // ============================================================
+  // LOCATIONS
+  // ============================================================
 
-        const context = canvas.getContext("2d");
+  const loadLocations = useCallback(async () => {
+    try {
+      setLoadingLocations(true);
 
-        if (!context) {
-          resolve(null);
-          return;
-        }
+      const response =
+        await api.get<
+          LocationItem[] | LocationResponse
+        >("/api/locations/");
 
-        context.translate(canvas.width, 0);
-        context.scale(-1, 1);
+      const payload = response.data;
 
-        context.drawImage(
-          video,
-          0,
-          0,
-          canvas.width,
-          canvas.height
+      let list: LocationItem[] = [];
+
+      if (Array.isArray(payload)) {
+        list = payload;
+      } else if (Array.isArray(payload.locations)) {
+        list = payload.locations;
+      } else if (Array.isArray(payload.data)) {
+        list = payload.data;
+      } else if (Array.isArray(payload.items)) {
+        list = payload.items;
+      }
+
+      const active = list
+        .map((item) => ({
+          ...item,
+          id: Number(item.id),
+          latitude: Number(item.latitude),
+          longitude: Number(item.longitude),
+          radius_meters: Number(
+            item.radius_meters ?? 100
+          ),
+        }))
+        .filter(
+          (item) =>
+            Number.isFinite(item.id) &&
+            Number.isFinite(item.latitude) &&
+            Number.isFinite(item.longitude) &&
+            item.is_active !== false
         );
 
-        canvas.toBlob(
-          (blob) => {
-            if (!blob || blob.size === 0) {
-              resolve(null);
-              return;
-            }
+      setLocations(active);
 
-            const file = new File(
+      if (active.length > 0) {
+        setSelectedLocation((current) => {
+          if (
+            current &&
+            active.some(
+              (item) => String(item.id) === current
+            )
+          ) {
+            return current;
+          }
+
+          return String(active[0].id);
+        });
+      } else {
+        setSelectedLocation("");
+      }
+    } catch (err: any) {
+      console.error(err);
+
+      setLocations([]);
+      setSelectedLocation("");
+
+      setError(
+        apiError(
+          err,
+          "Unable to load workplace locations."
+        )
+      );
+    } finally {
+      setLoadingLocations(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLocations();
+  }, [loadLocations]);
+
+  // ============================================================
+  // ATTENDANCE STATUS
+  // ============================================================
+
+  const loadAttendanceStatus = useCallback(async () => {
+    if (!user?.id) {
+      setLoadingStatus(false);
+      return;
+    }
+
+    try {
+      setLoadingStatus(true);
+
+      const response =
+        await api.get<AttendanceStatusResponse>(
+          "/api/attendance/my-status"
+        );
+
+      const data = response.data;
+      const attendance = data.attendance;
+
+      const active =
+        data.is_checked_in === true ||
+        attendance?.is_checked_in === true ||
+        Boolean(
+          attendance?.check_in &&
+          !attendance?.check_out
+        );
+
+      setIsCheckedIn(active);
+
+      setHasAttendance(
+        data.has_attendance === true ||
+          Boolean(attendance)
+      );
+
+      setAttendanceId(
+        attendance?.id !== undefined
+          ? Number(attendance.id)
+          : null
+      );
+
+      setCheckInTime(
+        attendance?.check_in ?? null
+      );
+
+      setCheckOutTime(
+        attendance?.check_out ?? null
+      );
+
+      setWorkingHours(
+        formatWorkingHours(
+          attendance?.working_seconds,
+          attendance?.working_hours
+        )
+      );
+
+      if (active || attendance) {
+        setEmployeeName(
+          user.name ||
+            user.email ||
+            "Employee"
+        );
+      }
+    } catch (err: any) {
+      console.error(
+        "Attendance status error:",
+        err
+      );
+
+      const detail =
+        err?.response?.data?.detail;
+
+      if (
+        typeof detail === "string" &&
+        !detail.toLowerCase().includes("not found")
+      ) {
+        setError(detail);
+      }
+    } finally {
+      setLoadingStatus(false);
+    }
+  }, [
+    user?.id,
+    user?.name,
+    user?.email,
+  ]);
+
+  useEffect(() => {
+    void loadAttendanceStatus();
+  }, [loadAttendanceStatus]);
+
+  // ============================================================
+  // CAPTURE FRAME
+  // ============================================================
+
+  const captureFrame = (): Promise<File | null> =>
+    new Promise((resolve) => {
+      const video = videoRef.current;
+
+      if (!video) {
+        resolve(null);
+        return;
+      }
+
+      if (
+        video.videoWidth <= 0 ||
+        video.videoHeight <= 0
+      ) {
+        resolve(null);
+        return;
+      }
+
+      const canvas =
+        document.createElement("canvas");
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const context =
+        canvas.getContext("2d");
+
+      if (!context) {
+        resolve(null);
+        return;
+      }
+
+      context.translate(canvas.width, 0);
+      context.scale(-1, 1);
+
+      context.drawImage(
+        video,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(null);
+            return;
+          }
+
+          resolve(
+            new File(
               [blob],
-              "live-face-capture.jpg",
+              "attendance-face.jpg",
               {
                 type: "image/jpeg",
-                lastModified: Date.now(),
               }
-            );
+            )
+          );
+        },
+        "image/jpeg",
+        0.92
+      );
+    });
 
-            resolve(file);
-          },
-          "image/jpeg",
-          0.92
-        );
-      });
+  // ============================================================
+  // GPS
+  // ============================================================
 
-  // ==========================================================
-  // CURRENT GPS
-  // ==========================================================
-
-  const getCurrentPosition =
+  const getPosition =
     (): Promise<GeolocationPosition> =>
       new Promise((resolve, reject) => {
         if (!navigator.geolocation) {
           reject(
             new Error(
-              "GPS/location is not supported by this browser."
+              "Geolocation is not supported by this browser."
             )
           );
-
           return;
         }
 
@@ -461,70 +566,43 @@ export default function FaceRecognition() {
         );
       });
 
-  // ==========================================================
-  // VERIFY FACE + GPS + CHECK-IN
-  // ==========================================================
+  // ============================================================
+  // CHECK IN
+  // ============================================================
 
-  const handleVerifyAndCheckIn = async () => {
-    if (processing) return;
+  const handleCheckIn = async () => {
+    if (
+      processing ||
+      checkingOut ||
+      isCheckedIn ||
+      hasAttendance
+    ) {
+      return;
+    }
 
     setError("");
     setMessage("");
     setSuccess(false);
     setConfidence(null);
     setDistance(null);
-    setAttendanceId(null);
-
-    if (loadingLocations) {
-      setError(
-        "Workplace locations are still loading. Please wait."
-      );
-      return;
-    }
-
-    if (locations.length === 0) {
-      setError(
-        "No workplace location is available. Please add an active workplace location first."
-      );
-      return;
-    }
 
     if (!selectedLocation) {
-      setError("Please select a workplace location.");
-      return;
-    }
-
-    const selectedLocationObject =
-      locations.find(
-        (location) =>
-          String(location.id) === selectedLocation
-      );
-
-    if (!selectedLocationObject) {
       setError(
-        "The selected workplace location is invalid. Please select it again."
+        "Please select your workplace location."
       );
       return;
     }
 
     if (!cameraActive) {
-      setError("Please open the live camera first.");
-      return;
-    }
-
-    if (
-      !streamRef.current ||
-      streamRef.current.getVideoTracks().length === 0
-    ) {
       setError(
-        "The live camera stream is not available. Please restart the camera."
+        "Please open the live camera first."
       );
       return;
     }
 
     if (!user?.id) {
       setError(
-        "Your logged-in employee account could not be identified."
+        "Unable to identify the logged-in employee."
       );
       return;
     }
@@ -532,64 +610,26 @@ export default function FaceRecognition() {
     try {
       setProcessing(true);
 
-      // STEP 1
       setMessage(
-        "Capturing current live camera frame..."
+        "Capturing live biometric frame..."
       );
 
-      const image = await captureLiveFrame();
+      const image = await captureFrame();
 
       if (!image) {
         throw new Error(
-          "Could not capture the live camera frame. Keep your face visible inside the guide and try again."
+          "Unable to capture your face. Keep your face visible and try again."
         );
       }
 
-      // STEP 2
-      setMessage("Verifying your live face...");
+      setMessage(
+        "AI face recognition in progress..."
+      );
 
-      let faceResult:
-        | FaceVerificationResponse
-        | null = null;
-
-      try {
-        faceResult = await verifyFace(image);
-      } catch (err: any) {
-        console.error(
-          "Face verification failed:",
-          err
-        );
-
-        const detail =
-          err?.response?.data?.detail;
-
-        if (Array.isArray(detail)) {
-          throw new Error(
-            detail
-              .map(
-                (item: any) =>
-                  item?.msg ||
-                  "Invalid request."
-              )
-              .join(", ")
-          );
-        }
-
-        if (typeof detail === "string") {
-          throw new Error(detail);
-        }
-
-        if (err?.code === "ERR_NETWORK") {
-          throw new Error(
-            "Cannot reach the face recognition server. Make sure FastAPI is running at http://127.0.0.1:8000."
-          );
-        }
-
-        throw new Error(
-          err?.message ||
-            "Face verification failed."
-        );
-      }
+      const faceResult =
+        (await verifyFace(
+          image
+        )) as FaceResponse;
 
       if (
         !faceResult ||
@@ -597,85 +637,73 @@ export default function FaceRecognition() {
       ) {
         throw new Error(
           faceResult?.message ||
-            "Face not recognized. Make sure your face is clearly visible and already registered."
+            "Face not recognized. Please try again."
         );
       }
 
-      // STEP 3
       if (
         faceResult.user_id !== undefined &&
-        Number(faceResult.user_id) !== Number(user.id)
+        Number(faceResult.user_id) !==
+          Number(user.id)
       ) {
         throw new Error(
-          "The detected face belongs to another employee. Attendance cannot be marked."
+          "The detected face does not match the logged-in employee."
         );
       }
 
-      const detectedConfidence =
+      const faceConfidence =
         faceResult.confidence ??
         (faceResult.similarity !== undefined
           ? faceResult.similarity * 100
           : null);
 
-      setEmployeeName(
-        faceResult.employee_name ||
-          user.name ||
-          "Employee"
-      );
-
-      if (detectedConfidence !== null) {
+      if (faceConfidence !== null) {
         setConfidence(
-          Number(detectedConfidence)
+          Number(faceConfidence)
         );
       }
 
-      // STEP 4
+      setEmployeeName(
+        faceResult.employee_name ||
+          user.name ||
+          user.email ||
+          "Employee"
+      );
+
       setMessage(
-        "Face verified. Checking your current GPS location..."
+        "Identity verified. Checking GPS geofence..."
       );
 
       let position: GeolocationPosition;
 
       try {
-        position = await getCurrentPosition();
+        position = await getPosition();
       } catch (gpsError: any) {
-        console.error(
-          "GPS error:",
-          gpsError
-        );
-
         if (gpsError?.code === 1) {
           throw new Error(
-            "Location permission was denied. Allow location access for this site and try again."
+            "Location permission was denied. Allow location access and try again."
           );
         }
 
         if (gpsError?.code === 2) {
           throw new Error(
-            "Your current location could not be determined."
+            "Unable to determine your current location."
           );
         }
 
         if (gpsError?.code === 3) {
           throw new Error(
-            "Location request timed out. Please try again."
+            "GPS request timed out. Please try again."
           );
         }
 
         throw new Error(
-          "Unable to get your current location."
+          "Unable to access your current GPS location."
         );
       }
 
-      const latitude =
-        position.coords.latitude;
-
-      const longitude =
-        position.coords.longitude;
-
-      // STEP 5
       setMessage(
-        `Location received. Checking ${selectedLocationObject.name} and marking attendance...`
+        "GPS verified. Recording attendance..."
       );
 
       const response =
@@ -683,29 +711,35 @@ export default function FaceRecognition() {
           "/api/attendance/check-in",
           {
             user_id: Number(user.id),
-            latitude,
-            longitude,
-            location_id: Number(selectedLocation),
+            latitude:
+              position.coords.latitude,
+            longitude:
+              position.coords.longitude,
+            location_id:
+              Number(selectedLocation),
           }
         );
 
       const data = response.data;
 
       const status =
-        String(data.status || "").toLowerCase();
+        String(
+          data.status || ""
+        ).toLowerCase();
 
-      const isPresent =
-        status === "present" ||
-        status === "already present";
-
-      if (!isPresent) {
+      if (
+        status !== "present" &&
+        status !== "already present"
+      ) {
         throw new Error(
           data.message ||
-            "Attendance was not marked."
+            "Attendance was not recorded."
         );
       }
 
       setSuccess(true);
+      setIsCheckedIn(true);
+      setHasAttendance(true);
 
       setAttendanceId(
         data.attendance_id ?? null
@@ -715,99 +749,147 @@ export default function FaceRecognition() {
         data.distance_meters ?? null
       );
 
-      if (status === "already present") {
-        setMessage(
-          "Attendance was already marked for today."
-        );
-      } else {
-        setMessage(
-          "Attendance marked successfully."
-        );
-      }
+      setCheckOutTime(null);
+      setWorkingHours("");
+
+      setMessage(
+        status === "already present"
+          ? "Attendance was already marked for today."
+          : "Check-in successful. You are now marked as working."
+      );
+
+      await loadAttendanceStatus();
 
       stopCamera();
     } catch (err: any) {
       console.error(
-        "Attendance verification error:",
+        "Check-in error:",
         err
       );
 
-      const detail =
-        err?.response?.data?.detail;
-
-      if (Array.isArray(detail)) {
-        setError(
-          detail
-            .map(
-              (item: any) =>
-                item?.msg ||
-                "Invalid request."
-            )
-            .join(", ")
-        );
-      } else if (
-        typeof detail === "string"
-      ) {
-        setError(detail);
-      } else if (
-        err?.code === "ERR_NETWORK"
-      ) {
-        setError(
-          "Cannot connect to the backend. Make sure FastAPI is running at http://127.0.0.1:8000."
-        );
-      } else {
-        setError(
-          err?.message ||
-            "Attendance verification failed."
-        );
-      }
+      setError(
+        apiError(
+          err,
+          "Attendance verification failed."
+        )
+      );
     } finally {
       setProcessing(false);
     }
   };
 
-  // ==========================================================
-  // RESET
-  // ==========================================================
+  // ============================================================
+  // CHECK OUT
+  // ============================================================
 
-  const handleReset = () => {
-    stopCamera();
+  const handleCheckOut = async () => {
+    if (
+      checkingOut ||
+      processing ||
+      !isCheckedIn
+    ) {
+      return;
+    }
 
-    setSuccess(false);
-    setError("");
-    setMessage("");
-    setEmployeeName("");
-    setConfidence(null);
-    setDistance(null);
-    setAttendanceId(null);
+    try {
+      setCheckingOut(true);
+      setError("");
+      setMessage("");
+      setSuccess(false);
+
+      const response =
+        await api.post<CheckOutResponse>(
+          "/api/attendance/check-out"
+        );
+
+      const data = response.data;
+
+      setIsCheckedIn(false);
+      setHasAttendance(true);
+      setSuccess(true);
+
+      setAttendanceId(
+        data.attendance_id ??
+          attendanceId
+      );
+
+      setCheckInTime(
+        data.check_in ??
+          checkInTime
+      );
+
+      setCheckOutTime(
+        data.check_out ?? null
+      );
+
+      setWorkingHours(
+        data.working_hours ||
+          formatWorkingHours(
+            data.working_seconds
+          )
+      );
+
+      setMessage(
+        data.message ||
+          "Check-out recorded successfully."
+      );
+
+      stopCamera();
+
+      await loadAttendanceStatus();
+    } catch (err: any) {
+      console.error(
+        "Check-out error:",
+        err
+      );
+
+      setError(
+        apiError(
+          err,
+          "Unable to complete check-out."
+        )
+      );
+    } finally {
+      setCheckingOut(false);
+    }
   };
 
-  // ==========================================================
-  // DERIVED UI DATA
-  // ==========================================================
+  // ============================================================
+  // DERIVED
+  // ============================================================
 
   const selectedLocationObject =
     locations.find(
-      (location) =>
-        String(location.id) === selectedLocation
+      (item) =>
+        String(item.id) ===
+        selectedLocation
     );
 
+  const status =
+    loadingStatus
+      ? "SYNCING"
+      : checkingOut
+        ? "CHECKING OUT"
+        : processing
+          ? "PROCESSING"
+          : isCheckedIn
+            ? "WORKING"
+            : checkOutTime
+              ? "COMPLETED"
+              : cameraActive
+                ? "READY"
+                : "STANDBY";
+
   const confidenceValue =
-    confidence !== null
-      ? Math.max(0, Math.min(100, confidence))
-      : 0;
-
-  const systemStatus = success
-    ? "VERIFIED"
-    : processing
-      ? "PROCESSING"
-      : cameraActive && selectedLocation
-        ? "READY"
-        : "STANDBY";
-
-  // ==========================================================
-  // UI
-  // ==========================================================
+    confidence === null
+      ? 0
+      : Math.min(
+          100,
+          Math.max(
+            0,
+            confidence
+          )
+        );
 
   return (
     <div className="min-h-full space-y-6 pb-8">
@@ -817,28 +899,37 @@ export default function FaceRecognition() {
       ====================================================== */}
 
       <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+
         <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute -bottom-24 left-1/3 h-60 w-60 rounded-full bg-cyan-500/10 blur-3xl" />
+
+        <div className="absolute -bottom-20 left-1/3 h-60 w-60 rounded-full bg-cyan-500/10 blur-3xl" />
 
         <div className="relative flex flex-col gap-5 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
+
           <div className="flex items-start gap-4">
+
             <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/25">
+
               <ScanFace className="h-7 w-7" />
 
               <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 ring-4 ring-white dark:ring-slate-950">
                 <Sparkles className="h-3 w-3" />
               </span>
+
             </div>
 
             <div>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
+
+              <div className="mb-2 flex flex-wrap gap-2">
+
                 <span className="rounded-full bg-blue-500/10 px-3 py-1 text-[10px] font-bold tracking-[0.16em] text-blue-600 dark:text-blue-400">
                   SMART ATTENDANCE INTELLIGENCE
                 </span>
 
-                <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-bold tracking-wider text-emerald-600">
+                <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-bold tracking-wider text-emerald-600 dark:text-emerald-400">
                   AI BIOMETRIC
                 </span>
+
               </div>
 
               <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
@@ -847,43 +938,176 @@ export default function FaceRecognition() {
 
               <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
                 Secure biometric verification with
-                real-time GPS geofencing for intelligent
-                attendance.
+                real-time GPS geofencing and intelligent
+                attendance control.
               </p>
+
             </div>
           </div>
 
           <div className="flex items-center gap-3 self-start rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+
             <div
-              className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-                systemStatus === "VERIFIED"
+              className={
+                "flex h-10 w-10 items-center justify-center rounded-xl " +
+                (isCheckedIn
                   ? "bg-emerald-500/10 text-emerald-600"
-                  : systemStatus === "PROCESSING"
+                  : checkOutTime
                     ? "bg-blue-500/10 text-blue-600"
-                    : systemStatus === "READY"
-                      ? "bg-cyan-500/10 text-cyan-600"
-                      : "bg-slate-500/10 text-slate-500"
-              }`}
+                    : "bg-slate-500/10 text-slate-500")
+              }
             >
-              {systemStatus === "VERIFIED" ? (
+              {isCheckedIn ? (
+                <Clock3 className="h-5 w-5" />
+              ) : checkOutTime ? (
                 <CheckCircle2 className="h-5 w-5" />
-              ) : systemStatus === "PROCESSING" ? (
-                <RefreshCw className="h-5 w-5 animate-spin" />
               ) : (
                 <CircleDot className="h-5 w-5" />
               )}
             </div>
 
             <div>
+
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                System status
+                System Status
               </p>
 
               <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                {systemStatus}
+                {status}
               </p>
+
             </div>
+
           </div>
+
+        </div>
+      </div>
+
+      {/* ======================================================
+          TODAY ATTENDANCE
+      ====================================================== */}
+
+      <div
+        className={
+          "rounded-3xl border p-5 shadow-sm sm:p-6 " +
+          (isCheckedIn
+            ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/20"
+            : checkOutTime
+              ? "border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/20"
+              : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950")
+        }
+      >
+
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+
+          <div className="flex items-start gap-4">
+
+            <div
+              className={
+                "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl " +
+                (isCheckedIn
+                  ? "bg-emerald-500/10 text-emerald-600"
+                  : checkOutTime
+                    ? "bg-blue-500/10 text-blue-600"
+                    : "bg-slate-500/10 text-slate-500")
+              }
+            >
+              {isCheckedIn ? (
+                <Clock3 className="h-6 w-6" />
+              ) : checkOutTime ? (
+                <CheckCircle2 className="h-6 w-6" />
+              ) : (
+                <UserRound className="h-6 w-6" />
+              )}
+            </div>
+
+            <div>
+
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                Today's Attendance
+              </p>
+
+              <h2 className="mt-1 text-lg font-bold text-slate-900 dark:text-white">
+                {loadingStatus
+                  ? "Checking attendance..."
+                  : isCheckedIn
+                    ? "You are currently working"
+                    : checkOutTime
+                      ? "Attendance completed"
+                      : "Ready to start your workday"}
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {isCheckedIn
+                  ? "Your attendance session is active."
+                  : checkOutTime
+                    ? "Your attendance session has been completed."
+                    : "Use biometric verification to securely check in."}
+              </p>
+
+            </div>
+
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              void loadAttendanceStatus();
+            }}
+            disabled={
+              loadingStatus ||
+              processing ||
+              checkingOut
+            }
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:border-blue-300 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          >
+            <RefreshCw
+              className={
+                "h-4 w-4 " +
+                (loadingStatus
+                  ? "animate-spin"
+                  : "")
+              }
+            />
+            Refresh
+          </button>
+
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+
+          <div className="rounded-2xl border border-white/70 bg-white/70 p-4 dark:border-slate-800/50 dark:bg-slate-900/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Check In
+            </p>
+
+            <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">
+              {formatTime(checkInTime)}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/70 bg-white/70 p-4 dark:border-slate-800/50 dark:bg-slate-900/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Check Out
+            </p>
+
+            <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">
+              {formatTime(checkOutTime)}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/70 bg-white/70 p-4 dark:border-slate-800/50 dark:bg-slate-900/50">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Working Hours
+            </p>
+
+            <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">
+              {isCheckedIn
+                ? "In progress"
+                : workingHours || "--"}
+            </p>
+          </div>
+
         </div>
       </div>
 
@@ -892,149 +1116,178 @@ export default function FaceRecognition() {
       ====================================================== */}
 
       <div className="grid gap-3 sm:grid-cols-3">
+
         {[
           {
             icon: ScanFace,
             number: "01",
             title: "BIOMETRIC",
-            description: "Face identity",
+            text: "Face identity",
             active:
               cameraActive ||
               processing ||
-              success,
+              success ||
+              isCheckedIn,
           },
           {
             icon: Navigation,
             number: "02",
             title: "GEOLOCATION",
-            description: "GPS verification",
+            text: "GPS verification",
             active:
               processing ||
-              success,
+              success ||
+              isCheckedIn,
           },
           {
             icon: ShieldCheck,
             number: "03",
-            title: "ATTENDANCE",
-            description: "Secure check-in",
-            active: success,
+            title: isCheckedIn
+              ? "WORKING"
+              : "ATTENDANCE",
+            text: isCheckedIn
+              ? "Session active"
+              : checkOutTime
+                ? "Session completed"
+                : "Secure record",
+            active:
+              success ||
+              isCheckedIn ||
+              Boolean(checkOutTime),
           },
-        ].map((step) => {
-          const Icon = step.icon;
+        ].map((item) => {
+          const Icon = item.icon;
 
           return (
             <div
-              key={step.number}
-              className={`rounded-2xl border p-4 transition-all duration-300 ${
-                step.active
+              key={item.number}
+              className={
+                "rounded-2xl border p-4 transition-all " +
+                (item.active
                   ? "border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-950/20"
-                  : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"
-              }`}
+                  : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950")
+              }
             >
+
               <div className="flex items-center gap-3">
+
                 <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-                    step.active
+                  className={
+                    "flex h-10 w-10 items-center justify-center rounded-xl " +
+                    (item.active
                       ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                      : "bg-slate-100 text-slate-400 dark:bg-slate-900"
-                  }`}
+                      : "bg-slate-100 text-slate-400 dark:bg-slate-900")
+                  }
                 >
                   <Icon className="h-5 w-5" />
                 </div>
 
                 <div>
+
                   <p className="text-[10px] font-bold tracking-widest text-slate-400">
-                    {step.number} · {step.title}
+                    {item.number} · {item.title}
                   </p>
 
                   <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                    {step.description}
+                    {item.text}
                   </p>
+
                 </div>
 
-                {step.active && (
+                {item.active && (
                   <CheckCircle2 className="ml-auto h-5 w-5 text-emerald-500" />
                 )}
+
               </div>
+
             </div>
           );
         })}
+
       </div>
 
       {/* ======================================================
-          MAIN GRID
+          MAIN CONTENT
       ====================================================== */}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_380px]">
 
-        {/* ====================================================
-            CAMERA PANEL
-        ==================================================== */}
+        {/* CAMERA PANEL */}
 
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
 
-          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800 sm:px-6">
-            <div className="flex items-center justify-between gap-4">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+
+            <div className="flex items-center justify-between">
+
               <div className="flex items-center gap-3">
+
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
                   <Camera className="h-5 w-5" />
                 </div>
 
                 <div>
+
                   <h2 className="font-bold text-slate-900 dark:text-white">
                     Biometric Capture
                   </h2>
 
                   <p className="text-xs text-slate-500">
-                    Secure live camera verification
+                    Live facial verification
                   </p>
+
                 </div>
+
               </div>
 
               <div
-                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-bold tracking-wider ${
-                  cameraActive
+                className={
+                  "flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-bold tracking-wider " +
+                  (cameraActive
                     ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-400"
-                    : "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-900"
-                }`}
+                    : "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-900")
+                }
               >
+
                 <span
-                  className={`h-2 w-2 rounded-full ${
-                    cameraActive
+                  className={
+                    "h-2 w-2 rounded-full " +
+                    (cameraActive
                       ? "animate-pulse bg-emerald-500"
-                      : "bg-slate-400"
-                  }`}
+                      : "bg-slate-400")
+                  }
                 />
 
                 {cameraActive
                   ? "LIVE"
                   : "OFFLINE"}
+
               </div>
+
             </div>
           </div>
 
           <div className="p-5 sm:p-6">
 
-            {/* CAMERA */}
-            <div className="relative aspect-video overflow-hidden rounded-3xl bg-slate-950 ring-1 ring-slate-900/10">
-
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(37,99,235,0.16),transparent_58%)]" />
+            <div className="relative aspect-video overflow-hidden rounded-3xl bg-slate-950">
 
               <video
                 ref={videoRef}
                 autoPlay
                 muted
                 playsInline
-                className={`relative z-10 h-full w-full object-cover ${
-                  cameraActive
+                className={
+                  "h-full w-full object-cover " +
+                  (cameraActive
                     ? "scale-x-[-1]"
-                    : "hidden"
-                }`}
+                    : "hidden")
+                }
               />
 
               {!cameraActive && (
-                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center px-6 text-center">
-                  <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl border border-white/10 bg-white/5 text-slate-400 backdrop-blur">
+                <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+
+                  <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl border border-white/10 bg-white/5 text-slate-400">
                     <Camera className="h-9 w-9" />
                   </div>
 
@@ -1043,19 +1296,22 @@ export default function FaceRecognition() {
                   </p>
 
                   <p className="mt-1 max-w-sm text-sm text-slate-400">
-                    Activate the camera to begin
-                    biometric attendance verification.
+                    {isCheckedIn
+                      ? "Camera is not required while you are working."
+                      : checkOutTime
+                        ? "Today's attendance is already completed."
+                        : "Open the live camera to begin biometric verification."}
                   </p>
+
                 </div>
               )}
 
               {cameraActive && (
                 <>
-                  {/* GRID */}
-                  <div className="pointer-events-none absolute inset-0 z-20 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:40px_40px]" />
+                  <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:40px_40px]" />
 
-                  {/* FACE GUIDE */}
-                  <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+
                     <div className="relative h-[68%] w-[38%] min-w-[180px] max-w-[300px] rounded-[48%] border-2 border-white/70 shadow-[0_0_0_9999px_rgba(2,6,23,0.32)]">
 
                       <div className="absolute -left-1 -top-1 h-10 w-10 rounded-tl-2xl border-l-2 border-t-2 border-cyan-400" />
@@ -1066,137 +1322,142 @@ export default function FaceRecognition() {
 
                       <div className="absolute -bottom-1 -right-1 h-10 w-10 rounded-br-2xl border-b-2 border-r-2 border-cyan-400" />
 
-                      <div
-                        className={`absolute left-[8%] right-[8%] h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent ${
-                          processing
-                            ? "animate-[faceScan_1.8s_ease-in-out_infinite]"
-                            : "top-1/2"
-                        }`}
-                      />
+                      {processing && (
+                        <div className="absolute left-[8%] right-[8%] top-1/2 h-0.5 animate-pulse bg-cyan-400 shadow-lg shadow-cyan-400" />
+                      )}
+
                     </div>
+
                   </div>
 
-                  {/* LIVE BADGE */}
-                  <div className="absolute left-4 top-4 z-40 flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-[10px] font-bold tracking-wider text-white backdrop-blur">
+                  <div className="absolute left-4 top-4 z-30 flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-[10px] font-bold tracking-wider text-white backdrop-blur">
+
                     <Crosshair className="h-3.5 w-3.5 text-cyan-400" />
+
                     FACE ALIGNMENT
+
                   </div>
 
-                  {/* CAMERA INSTRUCTION */}
-                  <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/10 bg-slate-950/75 px-4 py-2 text-xs font-medium text-white backdrop-blur">
+                  <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/10 bg-slate-950/75 px-4 py-2 text-xs font-medium text-white backdrop-blur">
+
                     {processing
                       ? "AI verification in progress..."
-                      : "Position one face inside the guide"}
+                      : "Position your face inside the guide"}
+
                   </div>
+
                 </>
               )}
+
             </div>
 
-            {/* BUTTONS */}
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            {/* CAMERA CONTROL */}
 
-              {!cameraActive ? (
+            <div className="mt-5 flex gap-3">
+
+              {!cameraActive &&
+              !isCheckedIn &&
+              !checkOutTime ? (
+
                 <button
                   type="button"
                   onClick={startCamera}
                   disabled={
                     startingCamera ||
-                    processing
+                    processing ||
+                    checkingOut ||
+                    loadingStatus ||
+                    hasAttendance
                   }
-                  className="group relative inline-flex flex-1 items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-blue-600 to-cyan-500 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/30 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="group relative flex flex-1 items-center justify-center gap-3 overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-blue-600 to-cyan-500 px-5 py-4 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50"
                 >
+
                   <span className="absolute inset-0 -translate-x-full bg-white/10 transition-transform duration-700 group-hover:translate-x-full" />
 
                   <span className="relative flex items-center gap-2">
+
                     {startingCamera ? (
                       <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <RefreshCw className="h-5 w-5 animate-spin" />
                         Starting Camera...
                       </>
                     ) : (
                       <>
-                        <Camera className="h-4 w-4" />
+                        <Camera className="h-5 w-5" />
                         Open Live Camera
                         <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                       </>
                     )}
+
                   </span>
+
                 </button>
-              ) : (
+
+              ) : cameraActive ? (
+
                 <button
                   type="button"
                   onClick={stopCamera}
                   disabled={processing}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 transition-all duration-300 hover:-translate-y-0.5 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-red-900/50 dark:hover:bg-red-950/20 dark:hover:text-red-400"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-bold text-slate-700 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                 >
-                  <CameraOff className="h-4 w-4" />
+                  <CameraOff className="h-5 w-5" />
                   Stop Camera
                 </button>
+
+              ) : (
+
+                <div className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-bold text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-400">
+                  <CheckCircle2 className="h-5 w-5" />
+                  Attendance Active
+                </div>
+
               )}
 
-              {success && (
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="group inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-900/50 dark:hover:bg-blue-950/20 dark:hover:text-blue-400"
-                >
-                  <RefreshCw className="h-4 w-4 transition-transform duration-500 group-hover:rotate-180" />
-                  New Verification
-                </button>
-              )}
             </div>
 
-            {/* QUICK STATUS */}
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            {/* QUICK INFO */}
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Camera
-                  </span>
+            <div className="mt-5 grid grid-cols-3 gap-3">
 
-                  <Camera className="h-4 w-4 text-blue-500" />
-                </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center dark:border-slate-800 dark:bg-slate-900">
+                <ScanFace className="mx-auto h-5 w-5 text-blue-500" />
 
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  {cameraActive
-                    ? "Connected"
-                    : "Standby"}
+                <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Face
+                </p>
+
+                <p className="mt-1 text-xs font-bold text-slate-700 dark:text-slate-200">
+                  AI Verified
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    AI Engine
-                  </span>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center dark:border-slate-800 dark:bg-slate-900">
+                <Navigation className="mx-auto h-5 w-5 text-cyan-500" />
 
-                  <Fingerprint className="h-4 w-4 text-cyan-500" />
-                </div>
+                <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  GPS
+                </p>
 
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  {processing
-                    ? "Analyzing"
-                    : "Ready"}
+                <p className="mt-1 text-xs font-bold text-slate-700 dark:text-slate-200">
+                  Geofenced
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    GPS
-                  </span>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center dark:border-slate-800 dark:bg-slate-900">
+                <ShieldCheck className="mx-auto h-5 w-5 text-emerald-500" />
 
-                  <Navigation className="h-4 w-4 text-emerald-500" />
-                </div>
+                <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Security
+                </p>
 
-                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  {success
-                    ? "Verified"
-                    : "Waiting"}
+                <p className="mt-1 text-xs font-bold text-slate-700 dark:text-slate-200">
+                  Protected
                 </p>
               </div>
+
             </div>
+
           </div>
         </div>
 
@@ -1207,14 +1468,17 @@ export default function FaceRecognition() {
         <div className="space-y-5">
 
           {/* LOCATION */}
+
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600">
+
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600">
                 <MapPin className="h-5 w-5" />
               </div>
 
               <div>
-                <h2 className="font-bold text-slate-900 dark:text-white">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                   Attendance Location
                 </h2>
 
@@ -1222,6 +1486,7 @@ export default function FaceRecognition() {
                   Select your workplace
                 </p>
               </div>
+
             </div>
 
             <select
@@ -1236,16 +1501,18 @@ export default function FaceRecognition() {
               }}
               disabled={
                 processing ||
-                loadingLocations
+                checkingOut ||
+                loadingLocations ||
+                isCheckedIn ||
+                Boolean(checkOutTime)
               }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-medium text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
             >
+
               <option value="">
                 {loadingLocations
                   ? "Loading workplaces..."
-                  : locations.length > 0
-                    ? "Select workplace"
-                    : "No workplace locations"}
+                  : "Select workplace"}
               </option>
 
               {locations.map((location) => (
@@ -1254,79 +1521,66 @@ export default function FaceRecognition() {
                   value={String(location.id)}
                 >
                   {location.name} —{" "}
-                  {location.radius_meters}m radius
+                  {location.radius_meters}m
                 </option>
               ))}
+
             </select>
-
-            {loadingLocations && (
-              <div className="mt-3 flex items-center gap-2 text-xs font-medium text-blue-600">
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                Loading workplace locations...
-              </div>
-            )}
-
-            {!loadingLocations &&
-              locations.length === 0 && (
-                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-400">
-                  No active workplace locations
-                  found.
-                </div>
-              )}
 
             {selectedLocationObject && (
               <div className="mt-4 rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-950/20">
+
                 <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 dark:text-emerald-400">
                   <CheckCircle2 className="h-4 w-4" />
                   GEOFENCE READY
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-slate-400">
-                      Radius
-                    </p>
+                <div className="mt-3 flex items-center justify-between">
 
-                    <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">
-                      {selectedLocationObject.radius_meters} m
-                    </p>
-                  </div>
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400">
+                    Allowed Radius
+                  </span>
 
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-slate-400">
-                      Status
-                    </p>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                    {selectedLocationObject.radius_meters} m
+                  </span>
 
-                    <p className="mt-1 text-sm font-bold text-emerald-600">
-                      Active
-                    </p>
-                  </div>
                 </div>
+
               </div>
             )}
+
           </div>
 
           {/* EMPLOYEE */}
+
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+
             <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600">
+
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-600">
                 <UserRound className="h-5 w-5" />
               </div>
 
               <div>
-                <h2 className="font-bold text-slate-900 dark:text-white">
+
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
                   Employee Identity
                 </h2>
 
                 <p className="text-xs text-slate-500">
                   Logged-in account
                 </p>
+
               </div>
+
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-blue-500 text-sm font-bold text-white">
+
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-blue-500 font-bold text-white">
                   {(user?.name ||
                     user?.email ||
                     "E")
@@ -1335,6 +1589,7 @@ export default function FaceRecognition() {
                 </div>
 
                 <div className="min-w-0">
+
                   <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-200">
                     {user?.name ||
                       user?.email ||
@@ -1346,239 +1601,650 @@ export default function FaceRecognition() {
                       {user.email}
                     </p>
                   )}
+
                 </div>
+
               </div>
 
-              {user?.id && (
-                <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 dark:border-slate-800">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Employee ID
-                  </span>
-
-                  <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    #{user.id}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* VERIFY */}
-          <div className="rounded-3xl border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-cyan-50 p-5 shadow-sm dark:border-blue-900/40 dark:from-blue-950/20 dark:via-slate-950 dark:to-cyan-950/20">
+          {/* ==================================================
+              ATTENDANCE CONTROL
+          ================================================== */}
 
-            <div className="mb-4 flex items-center gap-2">
-              <Gauge className="h-4 w-4 text-blue-600" />
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
 
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600 dark:text-blue-400">
-                Verification Control
-              </span>
-            </div>
+            <div className="mb-5 flex items-center justify-between">
 
-            <button
-              type="button"
-              onClick={handleVerifyAndCheckIn}
-              disabled={processing}
-              className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 px-5 py-4 text-sm font-bold text-white shadow-xl shadow-slate-900/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-blue-900/20 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 dark:from-white dark:via-slate-100 dark:to-blue-100 dark:text-slate-950"
-            >
-              <span className="absolute inset-0 -translate-x-full bg-white/10 transition-transform duration-700 group-hover:translate-x-full dark:bg-blue-600/10" />
+              <div className="flex items-center gap-3">
 
-              <span className="relative flex items-center gap-2">
-                {processing ? (
-                  <>
-                    <RefreshCw className="h-5 w-5 animate-spin" />
-                    Verifying...
-                  </>
-                ) : (
-                  <>
+                <div
+                  className={
+                    "flex h-11 w-11 items-center justify-center rounded-2xl " +
+                    (isCheckedIn
+                      ? "bg-emerald-500/10 text-emerald-500"
+                      : checkOutTime
+                        ? "bg-blue-500/10 text-blue-500"
+                        : "bg-blue-500/10 text-blue-600")
+                  }
+                >
+                  {isCheckedIn ? (
+                    <Clock3 className="h-5 w-5" />
+                  ) : checkOutTime ? (
+                    <CheckCircle2 className="h-5 w-5" />
+                  ) : (
                     <ShieldCheck className="h-5 w-5" />
-                    Verify & Check In
-                    <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
-                  </>
-                )}
+                  )}
+                </div>
+
+                <div>
+
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Attendance Control
+                  </h2>
+
+                  <p className="text-[11px] text-slate-500">
+                    Secure employee attendance
+                  </p>
+
+                </div>
+
+              </div>
+
+              <span
+                className={
+                  "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider " +
+                  (isCheckedIn
+                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                    : checkOutTime
+                      ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                      : "bg-slate-100 text-slate-500 dark:bg-slate-900")
+                }
+              >
+
+                <span
+                  className={
+                    "h-1.5 w-1.5 rounded-full " +
+                    (isCheckedIn
+                      ? "animate-pulse bg-emerald-500"
+                      : checkOutTime
+                        ? "bg-blue-500"
+                        : "bg-slate-400")
+                  }
+                />
+
+                {isCheckedIn
+                  ? "Working"
+                  : checkOutTime
+                    ? "Completed"
+                    : "Ready"}
+
               </span>
-            </button>
 
-            <div className="mt-4 space-y-2">
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <CheckCircle2
-                  className={`h-4 w-4 ${
-                    cameraActive
-                      ? "text-emerald-500"
-                      : "text-slate-300"
-                  }`}
-                />
-
-                Live camera active
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <CheckCircle2
-                  className={`h-4 w-4 ${
-                    selectedLocation
-                      ? "text-emerald-500"
-                      : "text-slate-300"
-                  }`}
-                />
-
-                Workplace selected
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-
-                Authenticated employee
-              </div>
             </div>
+
+            {/* ==================================================
+                ACTIVE WORKING STATE
+            ================================================== */}
+
+            {isCheckedIn ? (
+
+              <div className="space-y-4">
+
+                <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4 dark:border-emerald-900/40 dark:from-emerald-950/30 dark:via-slate-950 dark:to-teal-950/20">
+
+                  <div className="relative flex items-center gap-3">
+
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/20">
+                      <Clock3 className="h-5 w-5" />
+                    </div>
+
+                    <div className="flex-1">
+
+                      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-400">
+                        Currently Working
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-100">
+                        Since {formatTime(checkInTime)}
+                      </p>
+
+                    </div>
+
+                    <span className="hidden rounded-full bg-emerald-500/10 px-2.5 py-1 text-[9px] font-bold text-emerald-600 sm:block">
+                      ACTIVE
+                    </span>
+
+                  </div>
+                </div>
+
+                {/* ==================================================
+                    REDESIGNED CHECK OUT BUTTON
+                ================================================== */}
+
+                <button
+                  type="button"
+                  onClick={handleCheckOut}
+                  disabled={
+                    checkingOut ||
+                    processing
+                  }
+                  className="group relative w-full overflow-hidden rounded-2xl border border-emerald-300/40 bg-slate-950 p-[1px] text-left shadow-[0_14px_40px_rgba(16,185,129,0.16)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_50px_rgba(16,185,129,0.28)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-500/20"
+                >
+
+                  {/* animated border glow */}
+                  <span className="absolute inset-0 bg-gradient-to-r from-emerald-400 via-cyan-400 to-teal-400 opacity-80 transition-opacity duration-300 group-hover:opacity-100" />
+
+                  {/* shine */}
+                  <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/20 transition-all duration-700 group-hover:left-[120%]" />
+
+                  <span className="relative flex items-center justify-between rounded-[15px] bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 px-4 py-4">
+
+                    <span className="flex min-w-0 items-center gap-3">
+
+                      {/* icon */}
+                      <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/15 shadow-inner backdrop-blur-sm">
+
+                        {!checkingOut && (
+                          <span className="absolute inset-0 animate-ping rounded-xl bg-white/10" />
+                        )}
+
+                        {checkingOut ? (
+                          <RefreshCw className="relative h-5 w-5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="relative h-5 w-5" />
+                        )}
+
+                      </span>
+
+                      {/* text */}
+                      <span className="min-w-0">
+
+                        <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-emerald-50">
+                          {checkingOut
+                            ? "Processing"
+                            : "End Work Session"}
+                        </span>
+
+                        <span className="mt-1 block truncate text-sm font-extrabold text-white">
+                          {checkingOut
+                            ? "CHECKING OUT..."
+                            : "CHECK OUT"}
+                        </span>
+
+                        <span className="mt-0.5 block text-[10px] font-medium text-emerald-50/80">
+                          {checkingOut
+                            ? "Recording your final attendance time"
+                            : "Complete today's attendance"}
+                        </span>
+
+                      </span>
+
+                    </span>
+
+                    {/* action indicator */}
+                    {!checkingOut && (
+                      <span className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/10 transition-all duration-300 group-hover:translate-x-1 group-hover:bg-white/20">
+
+                        <ArrowRight className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-0.5" />
+
+                      </span>
+                    )}
+
+                  </span>
+                </button>
+
+                <div className="flex items-center gap-2 rounded-xl bg-emerald-500/5 px-3 py-2.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+
+                  Check-out automatically calculates your working hours.
+
+                </div>
+
+              </div>
+
+            ) : checkOutTime ? (
+
+              /* ==================================================
+                 COMPLETED STATE
+              ================================================== */
+
+              <div className="space-y-4">
+
+                <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-cyan-50 p-4 dark:border-blue-900/40 dark:from-blue-950/30 dark:via-slate-950 dark:to-cyan-950/20">
+
+                  <div className="flex items-center gap-3">
+
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20">
+                      <CheckCircle2 className="h-5 w-5" />
+                    </div>
+
+                    <div>
+
+                      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-blue-600 dark:text-blue-400">
+                        Attendance Completed
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-100">
+                        Today's session is closed
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+
+                    <div className="rounded-xl bg-white/80 p-3 dark:bg-slate-900/60">
+
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                        Check In
+                      </p>
+
+                      <p className="mt-1 text-xs font-bold text-slate-700 dark:text-slate-200">
+                        {formatTime(checkInTime)}
+                      </p>
+
+                    </div>
+
+                    <div className="rounded-xl bg-white/80 p-3 dark:bg-slate-900/60">
+
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                        Check Out
+                      </p>
+
+                      <p className="mt-1 text-xs font-bold text-slate-700 dark:text-slate-200">
+                        {formatTime(checkOutTime)}
+                      </p>
+
+                    </div>
+
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+
+                  <div className="flex items-center gap-3">
+
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
+                      <Gauge className="h-5 w-5" />
+                    </div>
+
+                    <div>
+
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                        Total Working Hours
+                      </p>
+
+                      <p className="mt-1 text-base font-bold text-slate-800 dark:text-slate-200">
+                        {workingHours || "--"}
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+
+                </div>
+
+                <div className="flex items-center justify-center gap-2 rounded-xl bg-blue-500/5 px-3 py-3 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                  <ShieldCheck className="h-4 w-4" />
+                  Attendance securely recorded
+                </div>
+
+              </div>
+
+            ) : (
+
+              /* ==================================================
+                 CHECK IN STATE
+              ================================================== */
+
+              <div className="space-y-4">
+
+                <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-cyan-50 p-4 dark:border-blue-900/30 dark:from-blue-950/20 dark:via-slate-950 dark:to-cyan-950/20">
+
+                  <div className="flex items-start gap-3">
+
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20">
+                      <ScanFace className="h-5 w-5" />
+                    </div>
+
+                    <div>
+
+                      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-blue-600 dark:text-blue-400">
+                        AI Verification
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-100">
+                        Ready for secure check-in
+                      </p>
+
+                      <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                        Face recognition and GPS geofencing
+                        will validate your attendance.
+                      </p>
+
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* ==================================================
+                    REDESIGNED CHECK IN BUTTON
+                ================================================== */}
+
+                <button
+                  type="button"
+                  onClick={handleCheckIn}
+                  disabled={
+                    processing ||
+                    checkingOut ||
+                    loadingStatus ||
+                    loadingLocations ||
+                    !selectedLocation ||
+                    !cameraActive ||
+                    hasAttendance
+                  }
+                  className="group relative w-full overflow-hidden rounded-2xl border border-blue-300/40 bg-slate-950 p-[1px] text-left shadow-[0_14px_40px_rgba(37,99,235,0.18)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_55px_rgba(37,99,235,0.30)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-500/20"
+                >
+
+                  {/* animated gradient border */}
+                  <span className="absolute inset-0 bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400 opacity-80 transition-opacity duration-300 group-hover:opacity-100" />
+
+                  {/* moving shine */}
+                  <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-white/20 transition-all duration-700 group-hover:left-[120%]" />
+
+                  <span className="relative flex items-center justify-between rounded-[15px] bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 px-4 py-4">
+
+                    <span className="flex min-w-0 items-center gap-3">
+
+                      {/* icon */}
+                      <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/15 shadow-inner backdrop-blur-sm">
+
+                        {!processing && (
+                          <span className="absolute inset-0 rounded-xl border border-white/20 opacity-0 transition-opacity duration-300 group-hover:animate-pulse group-hover:opacity-100" />
+                        )}
+
+                        {processing ? (
+                          <RefreshCw className="relative h-5 w-5 animate-spin" />
+                        ) : (
+                          <ScanFace className="relative h-5 w-5" />
+                        )}
+
+                      </span>
+
+                      {/* text */}
+                      <span className="min-w-0">
+
+                        <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-blue-50">
+                          {processing
+                            ? "AI Verification"
+                            : "Start Work Session"}
+                        </span>
+
+                        <span className="mt-1 block truncate text-sm font-extrabold text-white">
+                          {processing
+                            ? "VERIFYING ATTENDANCE..."
+                            : "VERIFY & CHECK IN"}
+                        </span>
+
+                        <span className="mt-0.5 block text-[10px] font-medium text-blue-50/80">
+                          {processing
+                            ? "Face + GPS validation in progress"
+                            : "Start your secure attendance session"}
+                        </span>
+
+                      </span>
+
+                    </span>
+
+                    {/* action indicator */}
+                    {!processing && (
+                      <span className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/10 transition-all duration-300 group-hover:translate-x-1 group-hover:bg-white/20">
+
+                        <ArrowRight className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-0.5" />
+
+                      </span>
+                    )}
+
+                  </span>
+                </button>
+
+                {/* REQUIREMENTS */}
+
+                <div className="grid grid-cols-3 gap-2">
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-800 dark:bg-slate-900">
+
+                    <ScanFace className="mx-auto h-4 w-4 text-blue-500" />
+
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                      Face
+                    </p>
+
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-800 dark:bg-slate-900">
+
+                    <Navigation className="mx-auto h-4 w-4 text-cyan-500" />
+
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                      GPS
+                    </p>
+
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center dark:border-slate-800 dark:bg-slate-900">
+
+                    <ShieldCheck className="mx-auto h-4 w-4 text-emerald-500" />
+
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                      Secure
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <p className="text-center text-[10px] leading-5 text-slate-400">
+
+                  {!cameraActive
+                    ? "Open the live camera first to enable check-in."
+                    : !selectedLocation
+                      ? "Select a workplace location to continue."
+                      : "Your identity and location will be verified before attendance is recorded."}
+
+                </p>
+
+              </div>
+
+            )}
+
           </div>
         </div>
       </div>
 
       {/* ======================================================
-          STATUS
+          RESULT
       ====================================================== */}
 
-      {(message || error || success) && (
+      {(message ||
+        error ||
+        success ||
+        checkOutTime) && (
+
         <div
-          className={`overflow-hidden rounded-3xl border shadow-sm ${
-            success
-              ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20"
-              : error
-                ? "border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20"
-                : "border-blue-200 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-950/20"
-          }`}
+          className={
+            "rounded-3xl border shadow-sm " +
+            (error
+              ? "border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20"
+              : checkOutTime
+                ? "border-blue-200 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-950/20"
+                : success
+                  ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20"
+                  : "border-blue-200 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-950/20")
+          }
         >
+
           <div className="p-5 sm:p-6">
+
             <div className="flex items-start gap-4">
+
               <div
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-                  success
-                    ? "bg-emerald-500/10 text-emerald-600"
-                    : error
-                      ? "bg-red-500/10 text-red-600"
-                      : "bg-blue-500/10 text-blue-600"
-                }`}
+                className={
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl " +
+                  (error
+                    ? "bg-red-500/10 text-red-600"
+                    : checkOutTime
+                      ? "bg-blue-500/10 text-blue-600"
+                      : success
+                        ? "bg-emerald-500/10 text-emerald-600"
+                        : "bg-blue-500/10 text-blue-600")
+                }
               >
-                {success ? (
-                  <CheckCircle2 className="h-6 w-6" />
-                ) : error ? (
+                {error ? (
                   <AlertTriangle className="h-6 w-6" />
                 ) : (
-                  <RefreshCw className="h-5 w-5 animate-spin" />
+                  <CheckCircle2 className="h-6 w-6" />
                 )}
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3
-                    className={`font-bold ${
-                      success
-                        ? "text-emerald-700 dark:text-emerald-400"
-                        : error
-                          ? "text-red-700 dark:text-red-400"
-                          : "text-blue-700 dark:text-blue-400"
-                    }`}
-                  >
-                    {success
-                      ? "Attendance Successful"
-                      : error
-                        ? "Verification Failed"
-                        : "Processing"}
-                  </h3>
 
-                  {success && (
-                    <span className="rounded-full bg-emerald-500 px-2.5 py-1 text-[9px] font-bold tracking-wider text-white">
-                      VERIFIED
-                    </span>
-                  )}
-                </div>
+                <h3 className="font-bold text-slate-900 dark:text-white">
 
-                {(message || error) && (
+                  {error
+                    ? "Attendance Error"
+                    : checkOutTime
+                      ? "Attendance Completed"
+                      : success
+                        ? "Attendance Successful"
+                        : "Attendance Status"}
+
+                </h3>
+
+                {(error || message) && (
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                     {error || message}
                   </p>
                 )}
 
-                {success && (
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {(success ||
+                  isCheckedIn ||
+                  checkOutTime) && (
 
-                    <div className="rounded-2xl border border-white/70 bg-white/70 p-4 dark:border-slate-800/50 dark:bg-slate-900/50">
-                      <div className="mb-2 flex items-center justify-between">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          Employee
-                        </p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
 
-                        <UserRound className="h-4 w-4 text-violet-500" />
-                      </div>
+                    <div className="rounded-2xl bg-white/70 p-4 dark:bg-slate-900/50">
 
-                      <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-200">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Employee
+                      </p>
+
+                      <p className="mt-1 truncate text-sm font-bold text-slate-800 dark:text-slate-200">
                         {employeeName ||
                           user?.name ||
                           "Employee"}
                       </p>
+
                     </div>
 
-                    <div className="rounded-2xl border border-white/70 bg-white/70 p-4 dark:border-slate-800/50 dark:bg-slate-900/50">
-                      <div className="mb-2 flex items-center justify-between">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          Face Confidence
-                        </p>
+                    <div className="rounded-2xl bg-white/70 p-4 dark:bg-slate-900/50">
 
-                        <Fingerprint className="h-4 w-4 text-blue-500" />
-                      </div>
-
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                        {confidence !== null
-                          ? `${confidence.toFixed(2)}%`
-                          : "Verified"}
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Check In
                       </p>
 
-                      {confidence !== null && (
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-700"
-                            style={{
-                              width: `${confidenceValue}%`,
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="rounded-2xl border border-white/70 bg-white/70 p-4 dark:border-slate-800/50 dark:bg-slate-900/50">
-                      <div className="mb-2 flex items-center justify-between">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          Distance
-                        </p>
-
-                        <MapPin className="h-4 w-4 text-emerald-500" />
-                      </div>
-
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                        {distance !== null
-                          ? `${distance.toFixed(2)} m`
-                          : "Verified"}
+                      <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">
+                        {formatTime(checkInTime)}
                       </p>
+
                     </div>
+
+                    <div className="rounded-2xl bg-white/70 p-4 dark:bg-slate-900/50">
+
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Check Out
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">
+                        {formatTime(checkOutTime)}
+                      </p>
+
+                    </div>
+
+                    <div className="rounded-2xl bg-white/70 p-4 dark:bg-slate-900/50">
+
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Working Hours
+                      </p>
+
+                      <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-200">
+                        {isCheckedIn
+                          ? "In progress"
+                          : workingHours || "--"}
+                      </p>
+
+                    </div>
+
                   </div>
                 )}
 
-                {success &&
-                  attendanceId !== null && (
-                    <div className="mt-4 flex flex-wrap items-center gap-3">
-                      <span className="text-xs text-slate-500">
-                        Attendance ID
+                {confidence !== null && (
+
+                  <div className="mt-4">
+
+                    <div className="mb-2 flex justify-between">
+
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Face Confidence
                       </span>
 
-                      <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                        #{attendanceId}
+                      <span className="text-xs font-bold text-blue-600">
+                        {confidenceValue.toFixed(1)}%
                       </span>
 
-                      <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Recorded securely
-                      </span>
                     </div>
-                  )}
+
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500"
+                        style={{
+                          width: `${confidenceValue}%`,
+                        }}
+                      />
+
+                    </div>
+
+                  </div>
+                )}
+
+                {(attendanceId !== null ||
+                  distance !== null) && (
+
+                  <div className="mt-4 flex flex-wrap gap-3">
+
+                    {attendanceId !== null && (
+                      <span className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                        Attendance #{attendanceId}
+                      </span>
+                    )}
+
+                    {distance !== null && (
+                      <span className="flex items-center gap-1 text-xs text-slate-500">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {distance.toFixed(2)} m from workplace
+                      </span>
+                    )}
+
+                  </div>
+                )}
+
               </div>
             </div>
           </div>
@@ -1586,45 +2252,55 @@ export default function FaceRecognition() {
       )}
 
       {/* ======================================================
-          SECURITY INFORMATION
+          SECURITY
       ====================================================== */}
 
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
             <ShieldCheck className="h-5 w-5" />
           </div>
 
           <div className="flex-1">
+
             <div className="flex flex-wrap items-center gap-2">
+
               <h3 className="font-bold text-slate-900 dark:text-white">
                 Secure Attendance Protocol
               </h3>
 
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[9px] font-bold tracking-wider text-slate-500 dark:bg-slate-900">
-                AI + GPS
+                AI + GPS + CHECK-OUT
               </span>
+
             </div>
 
             <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Attendance requires a verified live
-              facial identity and current GPS position
-              inside the selected workplace radius.
+              Your attendance is protected using biometric
+              identity verification, GPS geofencing and
+              controlled check-out processing.
             </p>
+
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:min-w-[190px]">
+          <div className="grid grid-cols-3 gap-2 sm:min-w-[285px]">
+
             <div className="rounded-xl bg-slate-50 p-3 text-center dark:bg-slate-900">
+
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                 Biometric
               </p>
 
               <p className="mt-1 text-xs font-bold text-emerald-600">
-                Protected
+                Active
               </p>
+
             </div>
 
             <div className="rounded-xl bg-slate-50 p-3 text-center dark:bg-slate-900">
+
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                 Geofence
               </p>
@@ -1632,33 +2308,26 @@ export default function FaceRecognition() {
               <p className="mt-1 text-xs font-bold text-emerald-600">
                 Active
               </p>
+
             </div>
+
+            <div className="rounded-xl bg-slate-50 p-3 text-center dark:bg-slate-900">
+
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                Checkout
+              </p>
+
+              <p className="mt-1 text-xs font-bold text-emerald-600">
+                Enabled
+              </p>
+
+            </div>
+
           </div>
+
         </div>
       </div>
 
-      {/* ======================================================
-          SCAN ANIMATION
-      ====================================================== */}
-
-      <style>{`
-        @keyframes faceScan {
-          0% {
-            top: 8%;
-            opacity: 0.35;
-          }
-
-          50% {
-            top: 50%;
-            opacity: 1;
-          }
-
-          100% {
-            top: 92%;
-            opacity: 0.35;
-          }
-        }
-      `}</style>
     </div>
   );
 }

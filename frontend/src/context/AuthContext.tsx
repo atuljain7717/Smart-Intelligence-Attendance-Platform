@@ -1,3 +1,4 @@
+
 import {
   createContext,
   useContext,
@@ -12,10 +13,6 @@ import {
   getToken,
   type AuthUser,
 } from "../services/authService";
-
-// ============================================================
-// TYPES
-// ============================================================
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -37,28 +34,16 @@ interface AuthContextType {
   isAuthenticated: boolean;
 }
 
-// ============================================================
-// CONTEXT
-// ============================================================
-
 const AuthContext =
   createContext<AuthContextType | undefined>(
     undefined
   );
-
-// ============================================================
-// AUTH PROVIDER
-// ============================================================
 
 export function AuthProvider({
   children,
 }: {
   children: ReactNode;
 }) {
-  // ----------------------------------------------------------
-  // INITIAL AUTH STATE
-  // ----------------------------------------------------------
-
   const [user, setUser] =
     useState<AuthUser | null>(() => {
       try {
@@ -96,10 +81,6 @@ export function AuthProvider({
   const [loading, setLoading] =
     useState(false);
 
-  // ----------------------------------------------------------
-  // NORMAL EMAIL/PASSWORD LOGIN
-  // ----------------------------------------------------------
-
   const login = async (
     email: string,
     password: string
@@ -113,19 +94,16 @@ export function AuthProvider({
           password,
         });
 
-      // Save token
       localStorage.setItem(
         "access_token",
         response.access_token
       );
 
-      // Save user
       localStorage.setItem(
         "user",
         JSON.stringify(response.user)
       );
 
-      // Update React state immediately
       setToken(response.access_token);
       setUser(response.user);
 
@@ -142,16 +120,11 @@ export function AuthProvider({
     }
   };
 
-  // ----------------------------------------------------------
-  // GOOGLE OAUTH SESSION
-  // ----------------------------------------------------------
-
   const setAuthSession = (
     newToken: string,
     newUser: AuthUser
   ) => {
     try {
-      // Store authentication data
       localStorage.setItem(
         "access_token",
         newToken
@@ -162,11 +135,8 @@ export function AuthProvider({
         JSON.stringify(newUser)
       );
 
-      // Update React state immediately
       setToken(newToken);
       setUser(newUser);
-
-      // Google authentication is already complete.
       setLoading(false);
 
       console.log(
@@ -178,7 +148,6 @@ export function AuthProvider({
         error
       );
 
-      // Clean up incomplete session
       localStorage.removeItem(
         "access_token"
       );
@@ -193,10 +162,6 @@ export function AuthProvider({
     }
   };
 
-  // ----------------------------------------------------------
-  // LOGOUT
-  // ----------------------------------------------------------
-
   const logout = () => {
     try {
       logoutRequest();
@@ -207,29 +172,19 @@ export function AuthProvider({
       );
     }
 
-    // Remove authentication data
     localStorage.removeItem(
       "access_token"
     );
 
     localStorage.removeItem("user");
 
-    // Clear React state
     setUser(null);
     setToken(null);
     setLoading(false);
   };
 
-  // ----------------------------------------------------------
-  // AUTHENTICATION STATUS
-  // ----------------------------------------------------------
-
   const isAuthenticated =
     Boolean(token && user);
-
-  // ----------------------------------------------------------
-  // PROVIDER
-  // ----------------------------------------------------------
 
   return (
     <AuthContext.Provider
@@ -247,10 +202,6 @@ export function AuthProvider({
     </AuthContext.Provider>
   );
 }
-
-// ============================================================
-// USE AUTH HOOK
-// ============================================================
 
 export function useAuth() {
   const context =

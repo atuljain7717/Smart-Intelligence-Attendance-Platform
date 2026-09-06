@@ -88,7 +88,6 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
 
-    # Updated: minimum 8 characters
     password: str = Field(
         ...,
         min_length=8,
@@ -560,11 +559,17 @@ async def google_login(
             "Redirect URI:",
             redirect_uri,
         )
+        print("Google account selection: ENABLED")
         print("========================================")
+
+        # ----------------------------------------------------
+        # FORCE GOOGLE ACCOUNT SELECTION
+        # ----------------------------------------------------
 
         return await oauth.google.authorize_redirect(
             request,
             redirect_uri,
+            prompt="select_account",
         )
 
     except Exception as exc:
@@ -707,6 +712,18 @@ async def google_callback(
     else:
 
         try:
+            # Google users do not have a local password.
+            #
+            # Generate a random password hash instead of NULL.
+            # This keeps the account compatible with databases
+            # where users.password_hash is NOT NULL.
+            #
+            # The generated password is never exposed to the user.
+
+            google_password_hash = hash_password(
+                secrets.token_urlsafe(32)
+            )
+
             user = db.execute(
                 text("""
                     INSERT INTO public.users
@@ -722,7 +739,7 @@ async def google_callback(
                     (
                         :name,
                         :email,
-                        NULL,
+                        :password_hash,
                         'employee',
                         CURRENT_TIMESTAMP,
                         TRUE
@@ -737,6 +754,7 @@ async def google_callback(
                 {
                     "name": google_name,
                     "email": google_email,
+                    "password_hash": google_password_hash,
                 },
             ).mappings().first()
 
@@ -865,6 +883,7 @@ async def forgot_password(
     ).mappings().first()
 
     # Always return generic response for unknown emails
+
     if not user:
         return {
             "message": (
